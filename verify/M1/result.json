@@ -1,0 +1,87 @@
+{
+  "checks": {
+    "01-upright": {
+      "gx": 8.09151590378059e-9,
+      "gy": 9.809999961140415,
+      "ax": 0,
+      "ay": 0,
+      "spin": 0,
+      "maxA": 0,
+      "source": "motion",
+      "pass": true
+    },
+    "02-tilt-left": {
+      "gx": -5.5391426527125445,
+      "gy": 8.096542385757202,
+      "ax": 0,
+      "ay": 0,
+      "spin": 0,
+      "maxA": 0,
+      "source": "motion",
+      "pass": true
+    },
+    "03-tilt-right": {
+      "gx": 5.53914264142732,
+      "gy": 8.096542382263946,
+      "ax": 0,
+      "ay": 0,
+      "spin": 0,
+      "maxA": 0,
+      "source": "motion",
+      "pass": true
+    },
+    "04-upside-down": {
+      "gx": 1.1288988595936044e-8,
+      "gy": -9.809999963505769,
+      "ax": 0,
+      "ay": 0,
+      "spin": 0,
+      "maxA": 0,
+      "source": "motion",
+      "pass": true
+    },
+    "05-flat": {
+      "gx": 2.300739875626878e-17,
+      "gy": -1.999316227855971e-8,
+      "ax": 0,
+      "ay": 0,
+      "spin": 0,
+      "maxA": 0,
+      "source": "motion",
+      "pass": true
+    },
+    "06-shake": {
+      "gx": 4.693297758165429e-26,
+      "gy": 9.809999979988502,
+      "ax": 18.912427933226716,
+      "ay": 0,
+      "spin": -1.5707963267363296,
+      "maxA": 20.139643142382603,
+      "source": "motion",
+      "pass": true
+    },
+    "desktop-mouse-tilt": {
+      "gx": -9.81,
+      "gy": 0,
+      "src": "mouse",
+      "pass": true
+    },
+    "desktop-drag-shake": {
+      "ax": -8.832563945538476,
+      "ay": 0,
+      "pass": true
+    }
+  },
+  "webgl2": true,
+  "started": true,
+  "overlayVisible": true,
+  "frame": {
+    "avgMs": 44.115956502802234,
+    "maxMs": 149.9949951171875,
+    "cpuAvgMs": 0.02970588220940793,
+    "simSteps": 1111
+  },
+  "volume": "n/a (no water until M2)",
+  "consoleErrors": [],
+  "pass": true
+}

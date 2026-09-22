@@ -1,0 +1,11 @@
+{
+  "name": "phone-water",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Real-time hyperrealistic water simulation where the phone screen is the tank.",
+  "scripts": {
+    "dev": "node server/dev-server.mjs",
+    "verify:m1": "node verify/m1.mjs"
+  }
+}

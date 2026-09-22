@@ -1,0 +1,50 @@
+[hidden] { display: none !important; }
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #000; color: #e8f4f8;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  touch-action: none; overscroll-behavior: none;
+}
+/* #stage is always laid out in device-portrait; main.js counter-rotates it if
+   the browser rotated the viewport (iOS Safari cannot lock orientation). */
+#stage { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; transform-origin: 0 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.start {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(120% 80% at 50% 40%, #0d1418 0%, #030507 70%);
+  transition: opacity .6s ease; cursor: pointer; z-index: 5;
+}
+.start.hide { opacity: 0; pointer-events: none; }
+.start-inner { text-align: center; }
+.start-drop {
+  width: 44px; height: 44px; margin: 0 auto 22px; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.9) 0 6%, rgba(140,220,240,.55) 22%, rgba(20,90,120,.35) 70%);
+  box-shadow: 0 0 30px rgba(100,200,230,.25), inset 0 0 8px rgba(255,255,255,.3);
+  animation: bob 2.4s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: rotate(-45deg) translate(3px,-3px); } }
+.start-label { font-size: 17px; letter-spacing: .32em; text-transform: uppercase; font-weight: 300; color: #d6eef5; }
+.start-sub { margin-top: 12px; font-size: 12px; color: #6b8590; min-height: 1em; letter-spacing: .04em; }
+
+.debug {
+  position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; z-index: 10;
+  font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace; color: #d8f3ff;
+  background: rgba(0,0,0,.62); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px; padding: 8px 10px; min-width: 190px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.debug .row { display: flex; justify-content: space-between; gap: 10px; }
+.debug .k { color: #7fa3b3; }
+.debug .toggles { margin-top: 6px; border-top: 1px solid rgba(255,255,255,.12); padding-top: 6px; }
+.debug label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.debug input { margin: 0; }
+.debug canvas { display: block; margin: 6px auto 2px; }
+
+.fatal {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 24px; text-align: center; background: #000; color: #9fb7c1; font-size: 14px; z-index: 20;
+}
