@@ -101,6 +101,9 @@ export class FlipSim {
     this._vel2 = new Float32Array(2 * count);
     this.rhs = new Float64Array(n);
     this.smoothDensity = new Float32Array(n);
+    this.stA = new Float32Array(n);
+    this.stB = new Float32Array(n);
+    this.ghost = new Float64Array(n);
     this.mg = new PressureMG(this.nx, this.ny);
 
     // Diagnostics (written each step, read by the host).
@@ -115,12 +118,18 @@ export class FlipSim {
     // thin wall boundary layers that damp real sloshing are unresolved, and an
     // inviscid 2D flow keeps its vortices forever. Clamped for explicit stability.
     this.viscosity = opts.viscosity ?? 2e-5;
+    // Effective surface tension (N/m); see _surfaceTensionGhost for why it is below 0.072.
+    this.surfaceTension = opts.surfaceTension ?? 0.003;
   }
 
   // One fixed step of length dt. Particle separation runs once per step; the
   // grid projection runs 1–3 times so the fastest water crosses ≤ 4 cells per
   // substep (wall clamping makes that CFL safe from leaks).
-  step(dt, gx, gy) {
+  // fx, fy: body acceleration on the water in the tank frame (gravity − tank
+  // acceleration). omega / alpha: tank spin rate and its derivative (rad/s,
+  // rad/s², + = clockwise on screen); they add Coriolis, centrifugal and Euler
+  // forces about the tank centre.
+  step(dt, fx, fy, omega = 0, alpha = 0) {
     const maxTravel = 4 * this.h;
     let sub = Math.ceil((this.maxSpeed * dt) / maxTravel);
     sub = sub < 1 ? 1 : sub > 3 ? 3 : sub;
@@ -133,7 +142,7 @@ export class FlipSim {
       // Forces → grid → projection → back to particles → advect with the
       // divergence-free velocity. (Advecting with v+g·dt *before* projecting
       // compresses the pool by ~g·dt²/h cells each step: 0.8 cells here.)
-      this._applyForces(sdt, gx, gy);
+      this._applyForces(sdt, fx, fy, omega, alpha);
       this._toGrid();
       this._updateDensity();
       this.prevU.set(this.u); // FLIP delta covers viscosity + pressure
@@ -146,12 +155,32 @@ export class FlipSim {
     }
   }
 
-  _applyForces(dt, gx, gy) {
-    const vel = this.vel;
-    const dvx = gx * dt, dvy = gy * dt;
-    for (let i = 0, n = this.numParticles; i < n; i++) {
-      vel[2 * i] += dvx;
-      vel[2 * i + 1] += dvy;
+  // Tank-frame (non-inertial) forces. In stage coords (y down) a positive angle
+  // rotates +x toward +y, i.e. clockwise on screen, so the usual 2D formulas
+  // hold with ẑ×(x, y) = (−y, x):
+  //   Coriolis     −2ω ẑ×v      (applied as an exact rotation of v: energy-neutral)
+  //   centrifugal  +ω² r
+  //   Euler        −α ẑ×r = α (r_y, −r_x)
+  _applyForces(dt, fx, fy, omega, alpha) {
+    const vel = this.vel, pos = this.pos;
+    const n = this.numParticles;
+    const dvx = fx * dt, dvy = fy * dt;
+    if (omega === 0 && alpha === 0) {
+      for (let i = 0; i < n; i++) {
+        vel[2 * i] += dvx;
+        vel[2 * i + 1] += dvy;
+      }
+      return;
+    }
+    const cx = 0.5 * this.width, cy = 0.5 * this.height;
+    const w2 = omega * omega * dt, ad = alpha * dt;
+    const th = -2 * omega * dt; // Coriolis rotates v at rate −2ω
+    const cs = Math.cos(th), sn = Math.sin(th);
+    for (let i = 0; i < n; i++) {
+      const rx = pos[2 * i] - cx, ry = pos[2 * i + 1] - cy;
+      const vx = vel[2 * i], vy = vel[2 * i + 1];
+      vel[2 * i] = cs * vx - sn * vy + dvx + w2 * rx + ad * ry;
+      vel[2 * i + 1] = sn * vx + cs * vy + dvy + w2 * ry - ad * rx;
     }
   }
 
@@ -419,7 +448,19 @@ export class FlipSim {
         fill += fr < 1 ? fr : 1;
       }
     }
+    const st = this.surfaceTension > 0 && rest > 0;
+    if (st) this._surfaceTensionGhost(dt);
     this.mg.solve(cellType, rhs, q, this.pressureCycles);
+    // Air cells bordering fluid carry the Laplace pressure jump σκ (ghost fluid).
+    if (st) {
+      const ghost = this.ghost;
+      for (let i = 1; i < nx - 1; i++) {
+        for (let j = 1; j < ny - 1; j++) {
+          const c = i * ny + j;
+          if (cellType[c] === AIR) q[c] = ghost[c];
+        }
+      }
+    }
     // Apply the pressure gradient on faces between two non-solid cells.
     for (let i = 1; i < nx; i++) {
       for (let j = 1; j < ny; j++) {
@@ -433,6 +474,83 @@ export class FlipSim {
     // Grid fill in cell units: Σ min(ρ/ρ0, 1). Unlike a raw fluid-cell count it
     // does not over-count sparse surface/spray cells.
     this.fillVolume = rest > 0 ? fill : fluid;
+  }
+
+  // Surface tension via the ghost-fluid method: air cells next to the liquid get
+  // Dirichlet pressure σκ instead of 0, and the fluid cells' rhs absorbs it.
+  // κ comes from a blurred liquid-fraction field F = min(ρ/ρ0, 1):
+  // n = −∇F/|∇F|, κ = ∇·n (positive for a convex blob). Walls copy the
+  // neighbouring F (90° contact angle). Explicit surface tension is only stable
+  // for dt < sqrt(ρh³/2πσ) ≈ 1 ms at real σ = 0.072 N/m on this grid, so σ is a
+  // weaker effective value and κ is clamped to |κ| ≤ 1/h.
+  _surfaceTensionGhost(dt) {
+    const { nx, ny, cellType, particleDensity } = this;
+    const F = this.stA, T = this.stB, nX = this.du, nY = this.dv, ghost = this.ghost, rhs = this.rhs;
+    const inv = 1 / this.restDensity;
+    const n = this.numCells;
+    for (let c = 0; c < n; c++) {
+      const f = particleDensity[c] * inv;
+      F[c] = f < 1 ? f : 1;
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      this._copyWalls(F);
+      // Separable [1 2 1]/4 blur: x into T, then y back into F.
+      for (let i = 1; i < nx - 1; i++) {
+        for (let j = 1; j < ny - 1; j++) {
+          const c = i * ny + j;
+          T[c] = 0.25 * (F[c - ny] + 2 * F[c] + F[c + ny]);
+        }
+      }
+      this._copyWalls(T);
+      for (let i = 1; i < nx - 1; i++) {
+        for (let j = 1; j < ny - 1; j++) {
+          const c = i * ny + j;
+          F[c] = 0.25 * (T[c - 1] + 2 * T[c] + T[c + 1]);
+        }
+      }
+    }
+    this._copyWalls(F);
+    for (let i = 1; i < nx - 1; i++) {
+      for (let j = 1; j < ny - 1; j++) {
+        const c = i * ny + j;
+        const gx = F[c + ny] - F[c - ny], gy = F[c + 1] - F[c - 1];
+        const g = Math.sqrt(gx * gx + gy * gy);
+        if (g > 1e-3) { nX[c] = -gx / g; nY[c] = -gy / g; } else { nX[c] = 0; nY[c] = 0; }
+      }
+    }
+    this._copyWalls(nX);
+    this._copyWalls(nY);
+    const scale = (this.surfaceTension * dt) / (this.density * this.h * this.h);
+    for (let i = 1; i < nx - 1; i++) {
+      for (let j = 1; j < ny - 1; j++) {
+        const c = i * ny + j;
+        ghost[c] = 0;
+        if (cellType[c] !== AIR) continue;
+        let k = 0.5 * (nX[c + ny] - nX[c - ny] + nY[c + 1] - nY[c - 1]); // 1/h units
+        k = k > 1 ? 1 : k < -1 ? -1 : k;
+        ghost[c] = scale * k;
+      }
+    }
+    // Move the known ghost values to the right-hand side of adjacent fluid cells.
+    for (let i = 1; i < nx - 1; i++) {
+      for (let j = 1; j < ny - 1; j++) {
+        const c = i * ny + j;
+        if (cellType[c] !== FLUID) continue;
+        let add = 0;
+        if (cellType[c - ny] === AIR) add += ghost[c - ny];
+        if (cellType[c + ny] === AIR) add += ghost[c + ny];
+        if (cellType[c - 1] === AIR) add += ghost[c - 1];
+        if (cellType[c + 1] === AIR) add += ghost[c + 1];
+        rhs[c] += add;
+      }
+    }
+  }
+
+  // Border cells take the value of their inward neighbour (zero normal gradient).
+  _copyWalls(A) {
+    const { nx, ny } = this;
+    for (let j = 0; j < ny; j++) { A[j] = A[ny + j]; A[(nx - 1) * ny + j] = A[(nx - 2) * ny + j]; }
+    for (let i = 0; i < nx; i++) { A[i * ny] = A[i * ny + 1]; A[i * ny + ny - 1] = A[i * ny + ny - 2]; }
   }
 
   _toParticles() {

@@ -47,7 +47,11 @@ const state = {
 
 // Physical tank: a phone-sized glass, 15 cm tall, width from the stage aspect.
 const TANK_HEIGHT_M = 0.15;
-const CELLS_X = 84; // High quality; M7 makes this adaptive.
+// High quality; M7 makes this adaptive. `?cells=N` overrides (testing / slow devices).
+const CELLS_X = (() => {
+  const v = Number(new URLSearchParams(location.search).get('cells'));
+  return v >= 16 && v <= 256 ? Math.round(v) : 84;
+})();
 
 const sim = new SimClient((data, count) => {
   renderer.particles.upload(data, count);

@@ -1,0 +1,226 @@
+{
+  "phases": {
+    "01-settled": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2140,
+      "comX": 0.5,
+      "comY": 0.779,
+      "angMom": -0.000372,
+      "stepMs": 5.68,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 3.08,
+      "frameAvg": 22.2,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.67
+    },
+    "02-jerk-right-peak": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2110,
+      "comX": 0.522,
+      "comY": 0.784,
+      "angMom": -0.00153,
+      "stepMs": 5.88,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 4.6,
+      "frameAvg": 22.8,
+      "frameMax": 83.3,
+      "realtimeRatio": 0.65
+    },
+    "03-after-jerk": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2137.8,
+      "comX": 0.5,
+      "comY": 0.781,
+      "angMom": -0.000345,
+      "stepMs": 5.51,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 7.19,
+      "frameAvg": 22.4,
+      "frameMax": 83.3,
+      "realtimeRatio": 0.7
+    },
+    "04-hard-shake": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2061.5,
+      "comX": 0.503,
+      "comY": 0.747,
+      "angMom": 0.00894,
+      "stepMs": 10.1,
+      "stepMsMax": 82.19,
+      "substeps": 3,
+      "simTime": 9.6,
+      "frameAvg": 21.5,
+      "frameMax": 50,
+      "realtimeRatio": 0.55
+    },
+    "05-resettle": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2120.6,
+      "comX": 0.497,
+      "comY": 0.784,
+      "angMom": -0.00109,
+      "stepMs": 6.57,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 13.14,
+      "frameAvg": 21.7,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.76
+    },
+    "06-tilt-left": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2132.6,
+      "comX": 0.431,
+      "comY": 0.767,
+      "angMom": -0.00137,
+      "stepMs": 5.34,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 15.62,
+      "frameAvg": 21.8,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.73
+    },
+    "07-tilt-right": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2137.8,
+      "comX": 0.569,
+      "comY": 0.768,
+      "angMom": 0.000756,
+      "stepMs": 5.48,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 18.2,
+      "frameAvg": 20.7,
+      "frameMax": 50,
+      "realtimeRatio": 0.8
+    },
+    "08-upside-down": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2120.1,
+      "comX": 0.508,
+      "comY": 0.219,
+      "angMom": 0.000842,
+      "stepMs": 5.59,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 21.32,
+      "frameAvg": 21.2,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.69
+    },
+    "09-upright": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2119.5,
+      "comX": 0.497,
+      "comY": 0.784,
+      "angMom": -0.000358,
+      "stepMs": 5.57,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 24.87,
+      "frameAvg": 22.2,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.7
+    },
+    "10-twist-ccw": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2108.3,
+      "comX": 0.516,
+      "comY": 0.217,
+      "angMom": -0.00046,
+      "stepMs": 5.74,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 26.59,
+      "frameAvg": 22.4,
+      "frameMax": 83.3,
+      "realtimeRatio": 0.67
+    },
+    "11-after-twist": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2127.1,
+      "comX": 0.497,
+      "comY": 0.221,
+      "angMom": 0.000464,
+      "stepMs": 5.61,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 30.15,
+      "frameAvg": 21.9,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.76
+    },
+    "12-final-upright": {
+      "particles": 6952,
+      "outside": 0,
+      "fillVolume": 2141.1,
+      "comX": 0.495,
+      "comY": 0.777,
+      "angMom": -0.000314,
+      "stepMs": 5.3,
+      "stepMsMax": 82.19,
+      "substeps": 1,
+      "simTime": 36.7,
+      "frameAvg": 22.6,
+      "frameMax": 66.7,
+      "realtimeRatio": 0.73
+    }
+  },
+  "checks": {
+    "jerk": {
+      "comXSettled": 0.5,
+      "comXMin": 0.3724,
+      "comXMax": 0.5601,
+      "pass": true
+    },
+    "shake": {
+      "comXRange": 0.288,
+      "pass": true
+    },
+    "tiltLeft": {
+      "comX": 0.431,
+      "pass": true
+    },
+    "tiltRight": {
+      "comX": 0.569,
+      "pass": true
+    },
+    "flip": {
+      "comY": 0.219,
+      "pass": true
+    },
+    "twist": {
+      "meanAngMomDuringSpin": 0.00819,
+      "pass": true
+    },
+    "desktopDrag": {
+      "comXBefore": 0.497,
+      "comXMin": 0.389,
+      "pass": true
+    }
+  },
+  "volume": {
+    "particlesConstant": true,
+    "neverOutside": true,
+    "fillStart": 2140,
+    "fillEnd": 2141.1,
+    "fillChangePct": 0.05
+  },
+  "consoleErrors": [],
+  "pass": true
+}
