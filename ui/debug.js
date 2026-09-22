@@ -5,7 +5,8 @@ const CORNER = 72; // px hot-zone in each corner
 const TAP_WINDOW = 650; // ms for three taps
 
 export class DebugOverlay {
-  constructor(el, stage, { renderer, motion, stats, extraToggles }) {
+  constructor(el, stage, { renderer, motion, stats, sim, extraToggles }) {
+    this.sim = sim;
     this.el = el;
     this.stage = stage;
     this.renderer = renderer;
@@ -42,6 +43,8 @@ export class DebugOverlay {
       frame: this._row('frame avg/max'),
       cpu: this._row('cpu avg'),
       particles: this._row('particles'),
+      sim: this._row('sim step'),
+      leak: this._row('outside / fill'),
       quality: this._row('quality'),
       res: this._row('render px'),
       source: this._row('input'),
@@ -107,6 +110,11 @@ export class DebugOverlay {
     v.frame.textContent = `${s.frameAvg.toFixed(1)} / ${s.frameMax.toFixed(1)} ms`;
     v.cpu.textContent = `${s.cpuAvg.toFixed(2)} ms`;
     v.particles.textContent = String(s.particles);
+    const ss = this.sim && this.sim.stats;
+    if (ss) {
+      v.sim.textContent = `${ss.stepMs.toFixed(2)} ms ×${ss.substeps}`;
+      v.leak.textContent = `${ss.outside} / ${ss.fillVolume.toFixed(0)}`;
+    }
     v.quality.textContent = s.quality;
     v.res.textContent = `${this.renderer.width}×${this.renderer.height}`;
     v.source.textContent = `${m.source} (${m.permission})`;

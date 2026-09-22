@@ -2,6 +2,7 @@
 // Each pass can be toggled from the debug overlay via `renderer.passes[name]`.
 
 import { createContext, program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
+import { ParticlePass } from './particles.js';
 
 // Procedural dark backplate: fine frosted-glass grain over a subtly brushed,
 // slightly blue-tinted dark panel. Computed in linear space, encoded to sRGB.
@@ -70,14 +71,15 @@ export class Renderer {
     this.renderScale = 1; // fraction of devicePixelRatio (quality levels change this)
     this.width = 1;
     this.height = 1;
-    this.passes = { backplate: true };
+    this.passes = { backplate: true, particles: true };
     this.gl = createContext(
       canvas,
       () => { this.lost = true; },
-      () => { this.lost = false; this._init(); this.bpDirty = true; },
+      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); },
     );
     if (!this.gl) throw new Error('WebGL2 is not available on this device.');
     this._init();
+    this.particles = new ParticlePass(this.gl);
   }
 
   _init() {
@@ -146,5 +148,6 @@ export class Renderer {
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
     }
+    if (this.passes.particles) this.particles.draw(this.width);
   }
 }

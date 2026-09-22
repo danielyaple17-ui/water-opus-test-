@@ -5,7 +5,7 @@ import { MotionInput } from '../input/motion.js';
 import { DebugOverlay } from '../ui/debug.js';
 import { Stage, tryLockPortrait } from '../ui/stage.js';
 import { Stats } from '../ui/stats.js';
-import { FixedStep } from '../sim/fixed-step.js';
+import { SimClient } from '../sim/client.js';
 
 const $ = (id) => document.getElementById(id);
 const stageEl = $('stage');
@@ -29,7 +29,6 @@ try {
 
 const stats = new Stats();
 const motion = new MotionInput(stageEl);
-const clock = new FixedStep(120, 4);
 const stage = new Stage(stageEl, (w, h) => renderer.resize(w, h));
 
 const debug = new DebugOverlay($('debug'), stageEl, {
@@ -44,12 +43,21 @@ const debug = new DebugOverlay($('debug'), stageEl, {
 const state = {
   started: false,
   paused: false,
-  simTime: 0,
 };
 
-// Placeholder physics step (M2 plugs the particle sim in here).
-function simStep(dt) {
-  state.simTime += dt;
+// Physical tank: a phone-sized glass, 15 cm tall, width from the stage aspect.
+const TANK_HEIGHT_M = 0.15;
+const CELLS_X = 84; // High quality; M7 makes this adaptive.
+
+const sim = new SimClient((data, count) => {
+  renderer.particles.upload(data, count);
+  stats.particles = count;
+});
+debug.sim = sim;
+
+function initSim() {
+  const aspect = stage.width / stage.height;
+  sim.init({ worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: CELLS_X, fill: 0.45 });
 }
 
 let last = 0;
@@ -62,7 +70,10 @@ function frame(now) {
   const dt = frameMs * 0.001;
 
   motion.update(dt);
-  if (state.started) clock.advance(dt, simStep);
+  if (state.started) {
+    sim.update(dt, motion);
+    renderer.particles.radius = sim.radius;
+  }
   renderer.render();
 
   stats.push(frameMs, performance.now() - t0);
@@ -81,6 +92,7 @@ async function start() {
   if (perm === 'denied') {
     startSub.textContent = 'Motion access denied — using touch & mouse';
   }
+  initSim();
   state.started = true;
   startEl.classList.add('hide');
 }
@@ -89,7 +101,7 @@ startEl.addEventListener('click', start);
 // ---- lifecycle ----------------------------------------------------------
 document.addEventListener('visibilitychange', () => {
   state.paused = document.hidden;
-  if (!state.paused) { clock.reset(); stats.reset(); }
+  if (!state.paused) { sim.pendingDt = 0; stats.reset(); }
 });
 
 // Desktop testing: mouse input works before the start tap so tilting is visible.
@@ -98,4 +110,4 @@ if (navigator.maxTouchPoints === 0) motion.attach();
 requestAnimationFrame(frame);
 
 // Test / debugging hook (read-only use by verify scripts).
-window.__water = { state, stats, motion, renderer, clock, debug, stage };
+window.__water = { state, stats, motion, renderer, sim, debug, stage };
