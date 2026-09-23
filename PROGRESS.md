@@ -233,8 +233,25 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Checks: Node 104 cells calm 0.019/0.036 and after upside-down 0.019/0.040; jerk response at 104 = 84 (CoM min 0.281 vs 0.286, same swings). `node verify/quality-test.mjs` → all 6 scenarios pass. `node verify/ultra104.mjs` (pinned `?q=ultra`) → pass, 0 console errors, 33,196 particles constant, 0 outside, fill 10071 → 10045 (**−0.26%**), resettled activity 0.020. Frame (SwiftShader): avg 187 ms, worst 583 ms; worker 22.5 ms/step (vs ~16 at High on this VM). On a phone, Ultra is only kept if the controller measures headroom.
 - Visual (honest): the calm Ultra frame is a flat, clean waterline with the caustic web; the hard shake shows finer, sharper tongues and more individual bubbles than High, with the same whitewater behaviour.
 
+### Real-device benchmark (2026-09-23): iPhone, iOS 18.7, Safari, 390×844 @3x, via a Cloudflare tunnel
+| Level | Phase | Particles | Frame avg / p95 / max (ms) | Worker step (ms) | Sim ratio |
+|---|---|---|---|---|---|
+| Ultra | calm | 27,348 | 16.69 / 16.80 / 17.02 | 5.37 | 0.98 |
+| Ultra | shake | 27,348 | 16.68 / 16.78 / 17.10 | **12.65** | **0.53** |
+| High | calm | 17,931 | 16.69 / 16.80 / 17.18 | 2.83 | 1.00 |
+| High | shake | 17,931 | 16.68 / 16.80 / 17.34 | **8.45** | **0.73** |
+| Med | calm | 10,290 | 16.66 / 16.78 / 16.92 | 2.67 | 1.00 |
+| Med | shake | 10,290 | 16.67 / 16.76 / 17.30 | 4.46 | 1.00 |
+| Low | calm | 5,767 | 16.67 / 16.80 / 18.84 | 3.25 | 1.00 |
+| Low | shake | 5,767 | 16.67 / 16.86 / 16.98 | 2.97 | 1.00 |
+- **Rendering holds 60 fps at every level, Ultra included** (p95 ≤ 16.9 ms, a 60 Hz panel). GPU and main thread are within budget.
+- **The sim worker is the bottleneck in hard shakes.** A 120 Hz step must fit in 8.33 ms. High shake takes 8.45 ms/step, so the sim runs at 0.73× real time (slow-motion water) while frames stay at 60. Ultra shake takes 12.65 ms (0.53×). Calm High and Ultra are fine (2.8 / 5.4 ms). Med keeps real time even in a shake (4.46 ms). The shake step costs ~3× the calm step: substeps (up to 3) plus more MG cycles.
+- In auto mode the controller (sim ratio < 0.9 → drop) would hold Med during hard shaking and climb back after 8 s calm.
+- Particle counts are lower than headless (17,931 vs 21,684 at High) because the stage aspect on the phone differs (Safari UI/safe areas).
+- DoD verdict: 60 fps on High **yes**. The sim keeping real time on High in a hard shake: **no** (0.73×). Sensor sign: pending user report.
+
 ## Known Issues (priority order)
-1. **Needs a real device (user action): run `?bench=1` on an iPhone 13+ per `docs/DEVICE_TESTING.md` and paste the JSON here; also confirm the sensor sign.** The Definition of Done (60 fps at High) can't be confirmed without it. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
+1. **Sim too slow on a real iPhone at High/Ultra during hard shakes** (device bench above): High shake 8.45 ms per 120 Hz step → sim ×0.73 (slow motion); Ultra 12.65 ms → ×0.53. Rendering is fine (60 fps everywhere). Levers: cap substeps at 2 on High/Ultra, skip the second separation pass while substepping, fewer MG cycles when substepping, SIMD/WASM for P2G/G2P, or split the sim across two workers. Sensor sign still to confirm on the device.
 2. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
 3. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
 4. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
@@ -249,4 +266,4 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 13. After a two-finger reset (re-pour), foam generation stays at the weak 1/220 for 8 s (`sepBoost`), so a hard shake right after a reset gives less whitewater. Gate on pour state + measured packing noise instead of the timer if it matters.
 14. Residual floor twitch: after the FLIP/drift fix, calm water still shows isolated one-second rms blips up to ~0.05–0.06 (baseline 0.018). Invisible in renders so far; the next lever would be a density-drift correction that ramps in over a few steps instead of acting at full strength once over the band.
 
-NEXT: Blocked on Known Issue 1 (real-device bench + sensor sign, user action). The remaining open issues are either device-gated or invisible in renders; resume the loop once device numbers arrive (tune the quality levels to them first).
+NEXT: Known Issue 1: cut the worst-case (hard-shake) sim step on High to ≤ ~6.5 ms on the iPhone (≈ ≤ 25 ms on this VM's contended worker ≈ scale factor from the bench) without losing the look; re-bench on the device.
