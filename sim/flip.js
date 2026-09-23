@@ -231,14 +231,17 @@ export class FlipSim {
       const a = Math.sqrt(ax * ax + ay * ay);
       impact[i] = a;
       let gen = (a - thresh) * genK;
-      // Fast spray in sparse air cells turns white.
-      const c = Math.floor(pos[2 * i] * invH) * ny + Math.floor(pos[2 * i + 1] * invH);
-      if (rest > 0 && particleDensity[c] < 0.35 * rest && vx * vx + vy * vy > 0.09) gen = gen > 0.4 ? gen : 0.4;
       gen = gen < 0 ? 0 : gen > 1 ? 1 : gen;
-      const f = foam[i] * decay;
-      foam[i] = f > gen ? f : gen;
+      // Freshness (opaque whitewater) comes from impacts only: a drop flying
+      // through the air is clear, not white.
       const fr = fresh[i] * fdecay, g2 = gen * 2.5 > 1 ? 1 : gen * 2.5;
       fresh[i] = fr > g2 ? fr : g2;
+      // Fast spray in sparse air cells carries air: foam (bubbles and haze once
+      // it lands), but not freshness.
+      const c = Math.floor(pos[2 * i] * invH) * ny + Math.floor(pos[2 * i + 1] * invH);
+      if (rest > 0 && particleDensity[c] < 0.35 * rest && vx * vx + vy * vy > 0.09) gen = gen > 0.4 ? gen : 0.4;
+      const f = foam[i] * decay;
+      foam[i] = f > gen ? f : gen;
     }
   }
 

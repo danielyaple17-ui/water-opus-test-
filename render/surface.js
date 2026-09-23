@@ -446,6 +446,9 @@ void main() {
       vec2 pw = vUv * uCanvas / uDpr / 12.0 + vec2(0.0, uTime * 0.15);
       float n1 = vnoise(pw), n2 = vnoise(pw * 2.4 + 7.0);
       float ww = smoothstep(0.22, 0.45, fv + 0.14 * (n1 + 0.5 * n2 - 0.75));
+      // Isolated drops (little water around them in the depth field) stay clear:
+      // a flying drop is a lens, not a clump of foam, even straight off an impact.
+      ww *= smoothstep(0.08, 0.25, B);
       if (ww > 0.0) {
         // Foam scatters light strongly: bright where lit from above near the
         // surface, self-shadowed grey deeper in the churn. Noise adds clumps.
