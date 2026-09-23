@@ -1,4 +1,4 @@
-// Motion input: turns DeviceMotion (or the desktop mouse fallback) into three
+// Motion input: turns DeviceMotion (or the mouse / touch-drag fallback) into three
 // signals in *stage* coordinates (device-portrait, x right, y down, m/s²):
 //
 //   gravity (gx, gy)  – low-passed, direction + strength of gravity
@@ -59,6 +59,12 @@ export class MotionInput {
     this._onMouseMove = this._onMouseMove.bind(this);
     this._onMouseDown = this._onMouseDown.bind(this);
     this._onMouseUp = this._onMouseUp.bind(this);
+    // Touch fallback (no motion sensor, or a frame that blocks it): drag a
+    // finger to tilt — gravity points toward it — and flick to shake.
+    this._touchId = -1; this._tx0 = 0; this._ty0 = 0; this._touchTilt = false; this._lastTouchT = -1e9;
+    this._onPointerDown = this._onPointerDown.bind(this);
+    this._onPointerMove = this._onPointerMove.bind(this);
+    this._onPointerUp = this._onPointerUp.bind(this);
   }
 
   // Must be invoked synchronously from a user gesture on iOS.
@@ -83,6 +89,10 @@ export class MotionInput {
     window.addEventListener('mousemove', this._onMouseMove);
     window.addEventListener('mousedown', this._onMouseDown);
     window.addEventListener('mouseup', this._onMouseUp);
+    window.addEventListener('pointerdown', this._onPointerDown);
+    window.addEventListener('pointermove', this._onPointerMove);
+    window.addEventListener('pointerup', this._onPointerUp);
+    window.addEventListener('pointercancel', this._onPointerUp);
   }
 
   setSign(s) {
@@ -160,28 +170,61 @@ export class MotionInput {
     this._my = e.clientY - r.top;
   }
 
+  // Browsers synthesise mouse events after a touch; those must not tilt the tank.
+  _fromTouch(e) { return e.timeStamp - this._lastTouchT < 800; }
+
+  _onPointerDown(e) {
+    if (e.pointerType !== 'touch') return;
+    this._lastTouchT = e.timeStamp;
+    if (this.source === 'motion' || !e.isPrimary) return;
+    this._touchId = e.pointerId;
+    this._stagePoint(e);
+    this._tx0 = this._mx; this._ty0 = this._my; this._touchTilt = false;
+    this._pmx = this._mx; this._pmy = this._my; this._pvx = 0; this._pvy = 0;
+    this._mDown = true;
+    if (this.source === 'none') this.source = 'mouse';
+  }
+
+  _onPointerMove(e) {
+    if (e.pointerType !== 'touch') return;
+    this._lastTouchT = e.timeStamp;
+    if (this.source === 'motion' || e.pointerId !== this._touchId) return;
+    this._stagePoint(e);
+    // A tap (still finger) is a splash, not a tilt: tilt only once it moves.
+    if (!this._touchTilt && Math.hypot(this._mx - this._tx0, this._my - this._ty0) > 12) this._touchTilt = true;
+    if (this._touchTilt) this._aimGravity();
+  }
+
+  _onPointerUp(e) {
+    if (e.pointerType !== 'touch') return;
+    this._lastTouchT = e.timeStamp;
+    if (e.pointerId === this._touchId) { this._touchId = -1; this._mDown = false; }
+  }
+
+  // Gravity points from the stage centre toward the pointer (bottom = upright).
+  _aimGravity() {
+    const w = this.stage.clientWidth, h = this.stage.clientHeight;
+    const dx = this._mx - w * 0.5, dy = this._my - h * 0.5;
+    const r = Math.hypot(dx, dy);
+    if (r > Math.min(w, h) * 0.04) {
+      this.gx = (dx / r) * G;
+      this.gy = (dy / r) * G;
+    }
+  }
+
   _onMouseMove(e) {
-    if (this.source === 'motion') return;
+    if (this.source === 'motion' || this._fromTouch(e)) return;
     this._stagePoint(e);
     this._mouseMoved = true;
     if (this.source === 'none') {
       this.source = 'mouse';
       this._pmx = this._mx; this._pmy = this._my;
     }
-    if (!this._mDown) {
-      // Gravity points from the stage centre toward the cursor (bottom = upright).
-      const w = this.stage.clientWidth, h = this.stage.clientHeight;
-      const dx = this._mx - w * 0.5, dy = this._my - h * 0.5;
-      const r = Math.hypot(dx, dy);
-      if (r > Math.min(w, h) * 0.04) {
-        this.gx = (dx / r) * G;
-        this.gy = (dy / r) * G;
-      }
-    }
+    if (!this._mDown) this._aimGravity();
   }
 
   _onMouseDown(e) {
-    if (this.source === 'motion' || e.button !== 0) return;
+    if (this.source === 'motion' || e.button !== 0 || this._fromTouch(e)) return;
     this._stagePoint(e);
     this._mDown = true;
     this._pmx = this._mx; this._pmy = this._my;
@@ -189,7 +232,8 @@ export class MotionInput {
     if (this.source === 'none') this.source = 'mouse';
   }
 
-  _onMouseUp() {
+  _onMouseUp(e) {
+    if (this._fromTouch(e)) return;
     this._mDown = false;
   }
 

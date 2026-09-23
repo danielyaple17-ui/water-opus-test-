@@ -133,6 +133,17 @@ async function start() {
   }
   state.started = true;
   startEl.classList.add('hide');
+  // No sensor data after a moment on a touch device (denied, unsupported, or a
+  // frame that blocks motion): say how to move the water by hand, briefly.
+  if (navigator.maxTouchPoints > 0) {
+    setTimeout(() => {
+      if (motion.source === 'motion') return;
+      const hint = $('hint');
+      hint.hidden = false;
+      setTimeout(() => hint.classList.add('fade'), 4000);
+      setTimeout(() => { hint.hidden = true; }, 5200);
+    }, 2000);
+  }
 }
 startEl.addEventListener('click', start);
 
