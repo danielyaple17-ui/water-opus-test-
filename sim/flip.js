@@ -104,6 +104,11 @@ export class FlipSim {
     // Per-particle foam (0..1), permuted with the particles by the spatial sort.
     this.foam = new Float32Array(count);
     this._foam2 = new Float32Array(count);
+    // Stable per-particle identity (integer 0..255), permuted with the particles,
+    // so the renderer can give each foam bubble a fixed size/offset as it moves.
+    this.seed = new Float32Array(count);
+    this._seed2 = new Float32Array(count);
+    for (let i = 0; i < count; i++) this.seed[i] = (Math.imul(i + 1, 2654435761) >>> 24);
     this.stepVel = new Float32Array(2 * count); // velocities at the start of a step
     this.foamTau = 0.9; // s, foam decay time constant
     this.impact = new Float32Array(count); // last step's relative impact accel (for bubbles)
@@ -354,15 +359,17 @@ export class FlipSim {
     first[nc] = acc;
     // Scatter into the spare buffers, then swap.
     const npos = this._pos2, nvel = this._vel2, nfoam = this._foam2, foam = this.foam;
+    const nseed = this._seed2, seed = this.seed;
     for (let c = 0; c < nc; c++) counts[c] = first[c];
     for (let i = 0; i < np; i++) {
       const k = counts[cellOf[i]]++;
       npos[2 * k] = pos[2 * i]; npos[2 * k + 1] = pos[2 * i + 1];
       nvel[2 * k] = vel[2 * i]; nvel[2 * k + 1] = vel[2 * i + 1];
       nfoam[k] = foam[i];
+      nseed[k] = seed[i];
     }
-    this._pos2 = pos; this._vel2 = vel; this._foam2 = foam;
-    this.pos = pos = npos; this.vel = vel = nvel; this.foam = nfoam;
+    this._pos2 = pos; this._vel2 = vel; this._foam2 = foam; this._seed2 = seed;
+    this.pos = pos = npos; this.vel = vel = nvel; this.foam = nfoam; this.seed = nseed;
 
     // Each pair is visited once: the rest of this cell + the next cell in the
     // same column, and the three cells of the next column (all contiguous
@@ -789,6 +796,7 @@ export class FlipSim {
       sim.vel[2 * k + 1] = old.vel[2 * i + 1];
       sim.foam[k] = old.foam[i];
     }
+    // Seeds stay as constructed (duplicates from upsampling must differ anyway).
     sim._collide();
     // Rest density of the hex packing (spacing 2r × √3r, r = 0.3h): particles per
     // cell, the value the first step would measure on a fresh, undisturbed pool.

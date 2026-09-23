@@ -1,7 +1,7 @@
 // Simulation worker: owns the FlipSim and its fixed 120 Hz clock. The main
 // thread sends frame dt + input and a free output buffer; the worker advances
 // whole fixed steps and returns the buffer filled with particle state
-// (x, y normalised to the tank interior [0,1], foam 0..1, speed m/s), followed
+// (x, y normalised to the tank interior [0,1], seed + foam packed as int + fraction, speed m/s), followed
 // by MAX_BUBBLES × (x, y, radius as fraction of tank width, alpha), transferred
 // back zero-copy. The same ArrayBuffers ping-pong forever and the per-frame
 // inputs/stats live in the buffer header (sim/layout.js), so no message objects
@@ -35,7 +35,7 @@ function writeOut(out) {
   const invW = 1 / ((sim.nx - 2) * h), invH = 1 / ((sim.ny - 2) * h);
   const minX = h, maxX = (sim.nx - 1) * h, minY = h, maxY = (sim.ny - 1) * h;
   const cx = 0.5 * sim.width, cy = 0.5 * sim.height;
-  const foam = sim.foam;
+  const foam = sim.foam, seed = sim.seed;
   let outside = 0, sx = 0, sy = 0, L = 0, e = 0, fs = 0;
   for (let i = 0; i < n; i++) {
     const x = pos[2 * i], y = pos[2 * i + 1];
@@ -50,7 +50,9 @@ function writeOut(out) {
     const sp2 = vx * vx + vy * vy;
     e += sp2;
     fs += foam[i];
-    out[o + 2] = foam[i];
+    // Packed: integer part = stable particle seed, fraction = foam (0..0.999).
+    const fo = foam[i];
+    out[o + 2] = seed[i] + (fo < 0.999 ? fo : 0.999);
     out[o + 3] = Math.sqrt(sp2);
   }
   stats.outside = outside;

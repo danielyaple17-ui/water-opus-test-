@@ -5,6 +5,7 @@ import { createContext, program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 import { ParticlePass } from './particles.js';
 import { SurfacePass } from './surface.js';
 import { BubblePass } from './bubbles.js';
+import { FoamPass } from './foam.js';
 import { PostPass } from './post.js';
 
 // Procedural dark backplate: fine frosted-glass grain over a subtly brushed,
@@ -92,6 +93,7 @@ export class Renderer {
           this.particles.restore();
           this.surface.restore();
           this.bubbles.restore();
+          this.foam.restore();
           this.post.restore();
           this.lost = false;
           this.restoredCount++;
@@ -107,6 +109,7 @@ export class Renderer {
     this.particles = new ParticlePass(this.gl);
     this.surface = new SurfacePass(this.gl);
     this.bubbles = new BubblePass(this.gl);
+    this.foam = new FoamPass(this.gl);
     this.post = new PostPass(this.gl);
     this.time = 0;
   }
@@ -186,6 +189,9 @@ export class Renderer {
     // Scene (linear HDR) → post (bloom, glass, tone map, sRGB) → canvas.
     const scene = this.post.sceneTarget(this.width, this.height);
     this.surface.render(this.particles, this.vao, back, this.width, this.height, this.up, this.passes, scene);
+    if (this.passes.water && this.passes.foam) {
+      this.foam.draw(this.particles, this.surface.thickTex, this.surface.fmt.float ? 1 : 4, this.width, this.height, this.surface.dpr, this.up);
+    }
     if (this.passes.water && this.passes.bubbles) {
       this.bubbles.draw(this.width, this.particles.radius, this.width / this.height, this.up);
     }

@@ -15,7 +15,7 @@
 import { program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 
 const SPLAT_VS = `#version 300 es
-layout(location = 0) in vec4 aParticle;   // x, y, foam, speed
+layout(location = 0) in vec4 aParticle;   // x, y, seed + foam, speed
 uniform float uPointSize;   // blob diameter in target pixels
 uniform vec2 uRadiusN;      // particle radius as fraction of tank (x, y)
 out float vW;
@@ -26,7 +26,7 @@ void main() {
   // Instance 0 = the particle, 1..4 = mirror images across left/right/top/bottom.
   int m = gl_InstanceID;
   vW = 1.0;
-  vFoam = aParticle.z;
+  vFoam = fract(aParticle.z); // integer part is the particle seed (sim/worker.js)
   if (m == 1) p.x = -p.x;
   else if (m == 2) p.x = 2.0 - p.x;
   else if (m == 3) p.y = -p.y;
@@ -219,29 +219,6 @@ float causticPattern(vec2 p, float t, float w) {
   float pa = 0.5 + 0.5 * sin(p.x * 0.45 + t * 0.4) * sin(p.y * 0.38 - t * 0.3 + 1.7);
   return k * (0.3 + 1.1 * pa * pa) * (0.7 * causticLayer(p, t, w) + 0.35 * causticLayer(p * 1.9 + 11.0, t * 1.3, w * 1.3));
 }
-// Foam texture: clusters of small bubbles. Cellular noise where each cell is
-// a bubble: bright rounded cap near its centre, dark gaps between; each cell
-// randomly present or not, so foam breaks up into clumps instead of a glaze.
-float foamBubbles(vec2 p, float t, float density) {
-  vec2 ip = floor(p), fp = fract(p);
-  float v = 0.0;
-  for (int y = -1; y <= 1; y++) {
-    for (int x = -1; x <= 1; x++) {
-      vec2 g = vec2(float(x), float(y));
-      vec2 h = hash2(ip + g);
-      if (h.x > density) continue;                 // this bubble isn't there
-      vec2 o = 0.5 + 0.35 * sin(t * 0.6 + 6.2831 * h);
-      float r = 0.28 + 0.30 * h.y;                  // mixed bubble sizes
-      float d = length(g + o - fp) / r;
-      // Bubble: bright thin rim + soft highlight cap, transparent middle.
-      float rim = smoothstep(0.70, 0.95, d) * (1.0 - smoothstep(0.95, 1.08, d));
-      float cap = exp(-dot(g + o - fp + vec2(0.12, -0.12) * r, g + o - fp + vec2(0.12, -0.12) * r) / (r * r * 0.08));
-      v = max(v, rim * 0.45 + cap * 0.55 + (1.0 - smoothstep(0.0, 1.0, d)) * 0.3);
-    }
-  }
-  return v;
-}
-
 void main() {
   vec3 bg = texture(uBack, vUv).rgb;
   // Meniscus: where the free surface meets a side wall, water climbs the glass
@@ -423,17 +400,12 @@ void main() {
   if (uUseFoam > 0.5) {
     vec2 tf = texture(uThick, tUv).rg * uTScale;
     float fv = clamp(tf.g / max(tf.r, 0.35), 0.0, 1.0);
-    float fm = smoothstep(0.08, 0.6, fv);
+    float fm = smoothstep(0.15, 0.7, fv);
     if (fm > 0.0) {
-      vec2 pcss = vUv * uCanvas / uDpr;
-      float dens = 0.12 + 0.5 * fv;
-      float b = max(foamBubbles(pcss / 7.0, uTime, dens), 0.75 * foamBubbles(pcss / 4.0 + 31.0, uTime * 1.3, dens * 0.8));
+      // Aerated water scatters light: a faint milky haze where foam is dense.
+      // The bubbles themselves are sprites riding on the particles (render/foam.js).
       float lit = 0.6 + 0.4 * (1.0 - depthF);          // lit from above
-      vec3 foamCol = vec3(0.60, 0.66, 0.68) * lit;
-      // Milky haze: aerated water scatters light, whiter where denser …
-      water = mix(water, foamCol * 0.55, fm * (0.30 + 0.50 * fv));
-      // … with individual bubbles readable on top.
-      water = mix(water, foamCol, fm * clamp(b * (0.35 + 0.4 * fv), 0.0, 1.0));
+      water = mix(water, vec3(0.60, 0.66, 0.68) * lit * 0.5, fm * (0.10 + 0.30 * fv));
     }
   }
 
@@ -614,6 +586,7 @@ export class SurfacePass {
       gl.bindFramebuffer(gl.FRAMEBUFFER, C.fbo);
       gl.viewport(0, 0, C.w, C.h);
       gl.useProgram(this.down.p);
+      this.thickTex = thick.tex; // for passes drawn after the composite (render/foam.js)
       gl.bindTexture(gl.TEXTURE_2D, thick.tex);
       gl.uniform1i(this.down.u.uSrc, 0);
       gl.uniform2f(this.down.u.uSrcTexel, 1 / A.w, 1 / A.h);
