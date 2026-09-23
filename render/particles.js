@@ -11,7 +11,7 @@ void main() {
   vec2 p = aParticle.xy;
   gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
   gl_PointSize = uPointSize;
-  vSpeed = aParticle.w; // (x, y, foam, speed)
+  vSpeed = fract(aParticle.z); // (x, y, seed + foam, freshness): debug dots show foam
 }`;
 
 const FS = `#version 300 es
@@ -26,8 +26,8 @@ void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(d, d);
   if (r2 > 1.0) discard;
-  // Deep blue at rest -> pale cyan when fast (linear space).
-  float s = clamp(vSpeed / 0.8, 0.0, 1.0);
+  // Deep blue → pale cyan with foam (linear space).
+  float s = clamp(vSpeed, 0.0, 1.0);
   vec3 c = mix(vec3(0.010, 0.080, 0.220), vec3(0.45, 0.80, 0.95), s);
   c *= 0.75 + 0.25 * (1.0 - r2);
   outColor = vec4(c, 1.0); // linear: drawn into the HDR scene buffer

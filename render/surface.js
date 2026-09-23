@@ -15,7 +15,7 @@
 import { program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 
 const SPLAT_VS = `#version 300 es
-layout(location = 0) in vec4 aParticle;   // x, y, seed + foam, speed
+layout(location = 0) in vec4 aParticle;   // x, y, seed + foam, freshness
 uniform float uPointSize;   // blob diameter in target pixels
 uniform vec2 uRadiusN;      // particle radius as fraction of tank (x, y)
 out float vW;
@@ -26,7 +26,10 @@ void main() {
   // Instance 0 = the particle, 1..4 = mirror images across left/right/top/bottom.
   int m = gl_InstanceID;
   vW = 1.0;
-  vFoam = fract(aParticle.z); // integer part is the particle seed (sim/worker.js)
+  // Integer part of z is the particle seed (sim/worker.js); w is freshness.
+  // Stale foam counts at 55%, so only fresh impact foam reaches the opaque
+  // whitewater range; the haze follows the same weighting.
+  vFoam = fract(aParticle.z) * mix(0.55, 1.0, aParticle.w);
   if (m == 1) p.x = -p.x;
   else if (m == 2) p.x = 2.0 - p.x;
   else if (m == 3) p.y = -p.y;

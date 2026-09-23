@@ -108,6 +108,11 @@ export class FlipSim {
     // so the renderer can give each foam bubble a fixed size/offset as it moves.
     this.seed = new Float32Array(count);
     this._seed2 = new Float32Array(count);
+    // Foam freshness (0..1): 1 right after an impact, decays in ~0.4 s. Only
+    // fresh foam renders as opaque whitewater, so it stays on impact fronts
+    // instead of filling the tank during sustained shaking.
+    this.fresh = new Float32Array(count);
+    this._fresh2 = new Float32Array(count);
     for (let i = 0; i < count; i++) this.seed[i] = (Math.imul(i + 1, 2654435761) >>> 24);
     this.stepVel = new Float32Array(2 * count); // velocities at the start of a step
     this.foamTau = 0.9; // s, foam decay time constant
@@ -209,8 +214,9 @@ export class FlipSim {
   // the largest body force (|g − a_tank| ≤ ~40 m/s²): water resting or sloshing
   // under the body force alone stays clear, a sudden stop does not.
   _updateFoam(dt, fx, fy) {
-    const { vel, stepVel, foam, impact, pos, particleDensity, ny, invH } = this;
+    const { vel, stepVel, foam, fresh, impact, pos, particleDensity, ny, invH } = this;
     const decay = Math.exp(-dt / this.foamTau);
+    const fdecay = Math.exp(-dt / 0.4);
     const inv = 1 / dt, rest = this.restDensity;
     const bodyA = Math.sqrt(fx * fx + fy * fy);
     const thresh = Math.max(60, bodyA * 1.5);
@@ -231,6 +237,8 @@ export class FlipSim {
       gen = gen < 0 ? 0 : gen > 1 ? 1 : gen;
       const f = foam[i] * decay;
       foam[i] = f > gen ? f : gen;
+      const fr = fresh[i] * fdecay, g2 = gen * 2.5 > 1 ? 1 : gen * 2.5;
+      fresh[i] = fr > g2 ? fr : g2;
     }
   }
 
@@ -366,7 +374,7 @@ export class FlipSim {
     first[nc] = acc;
     // Scatter into the spare buffers, then swap.
     const npos = this._pos2, nvel = this._vel2, nfoam = this._foam2, foam = this.foam;
-    const nseed = this._seed2, seed = this.seed;
+    const nseed = this._seed2, seed = this.seed, nfresh = this._fresh2, fresh = this.fresh;
     for (let c = 0; c < nc; c++) counts[c] = first[c];
     for (let i = 0; i < np; i++) {
       const k = counts[cellOf[i]]++;
@@ -374,9 +382,10 @@ export class FlipSim {
       nvel[2 * k] = vel[2 * i]; nvel[2 * k + 1] = vel[2 * i + 1];
       nfoam[k] = foam[i];
       nseed[k] = seed[i];
+      nfresh[k] = fresh[i];
     }
-    this._pos2 = pos; this._vel2 = vel; this._foam2 = foam; this._seed2 = seed;
-    this.pos = pos = npos; this.vel = vel = nvel; this.foam = nfoam; this.seed = nseed;
+    this._pos2 = pos; this._vel2 = vel; this._foam2 = foam; this._seed2 = seed; this._fresh2 = fresh;
+    this.pos = pos = npos; this.vel = vel = nvel; this.foam = nfoam; this.seed = nseed; this.fresh = nfresh;
 
     // Each pair is visited once: the rest of this cell + the next cell in the
     // same column, and the three cells of the next column (all contiguous
