@@ -346,6 +346,10 @@ void main() {
       // Sharpest just below the surface, fading with depth and to 0 before the
       // march limit (no visible cut-off).
       float fade = exp(-hS / 90.0) * (1.0 - smoothstep(0.6 * maxH, maxH, hS)) * (0.4 + 0.6 * act);
+      // Only a body of water focuses light onto the back wall: fade out in
+      // thin tongues, sheets and drops (depth field B < ~0.6), where the web
+      // otherwise read as bright veins.
+      fade *= smoothstep(0.5, 0.72, texture(uDepth, vUv).r);
       refr += vec3(0.050, 0.080, 0.078) * cst * fade;
     }
   }
