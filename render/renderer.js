@@ -4,6 +4,7 @@
 import { createContext, program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 import { ParticlePass } from './particles.js';
 import { SurfacePass } from './surface.js';
+import { BubblePass } from './bubbles.js';
 
 // Procedural dark backplate: fine frosted-glass grain over a subtly brushed,
 // slightly blue-tinted dark panel. Computed in linear space, encoded to sRGB.
@@ -64,18 +65,26 @@ export class Renderer {
     // Render-pass switches (debug overlay toggles these).
     this.passes = {
       backplate: true, water: true, blur: true, refraction: true, reflection: true,
-      color: true, glow: true, highlights: true, particles: false,
+      color: true, glow: true, highlights: true, foam: true, caustics: true, bubbles: true,
+      particles: false,
     };
     this.up = [0, 1]; // real-world up in GL screen space (from gravity)
     this.gl = createContext(
       canvas,
       () => { this.lost = true; },
-      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); this.surface.restore(); },
+      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); this.surface.restore(); this.bubbles.restore(); },
     );
     if (!this.gl) throw new Error('WebGL2 is not available on this device.');
     this._init();
     this.particles = new ParticlePass(this.gl);
     this.surface = new SurfacePass(this.gl);
+    this.bubbles = new BubblePass(this.gl);
+  }
+
+  // Per-frame scene inputs for animated effects (caustics / foam).
+  setTime(t, activity) {
+    this.surface.time = t;
+    this.surface.activity = activity;
   }
 
   // Gravity in stage coords (y down) → world-up in GL screen coords (y up).
@@ -144,6 +153,9 @@ export class Renderer {
     // The water composite also draws the backplate (without water: a plain blit).
     const back = this.passes.backplate ? this.bpTex : this.blackTex;
     this.surface.render(this.particles, this.vao, back, this.width, this.height, this.up, this.passes);
+    if (this.passes.water && this.passes.bubbles) {
+      this.bubbles.draw(this.width, this.particles.radius, this.width / this.height, this.up);
+    }
     if (this.passes.particles) this.particles.draw(this.width);
   }
 }

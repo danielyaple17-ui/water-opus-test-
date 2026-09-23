@@ -1,25 +1,31 @@
 // Simulation worker: owns the FlipSim and its fixed 120 Hz clock. The main
 // thread sends frame dt + input and a free output buffer; the worker advances
 // whole fixed steps and returns the buffer filled with particle state
-// (x, y normalised to the tank interior [0,1], vx, vy in m/s), transferred
+// (x, y normalised to the tank interior [0,1], foam 0..1, speed m/s), followed
+// by MAX_BUBBLES × (x, y, radius as fraction of tank width, alpha), transferred
 // back zero-copy. The same ArrayBuffers ping-pong forever: no per-frame allocation
 // of particle data.
 
 import { FlipSim } from './flip.js';
 import { FixedStep } from './fixed-step.js';
+import { Bubbles, MAX_BUBBLES } from './bubbles.js';
 
 let sim = null;
+let bubbles = null;
 const clock = new FixedStep(120, 4);
 const input = { gx: 0, gy: 9.81, ax: 0, ay: 0, spin: 0, alpha: 0, prevSpin: 0 };
 const stats = {
   type: 'frame', buf: null, count: 0,
   steps: 0, stepMs: 0, stepMsMax: 0, substeps: 1,
-  fluidCells: 0, fillVolume: 0, outside: 0, comX: 0.5, comY: 0.5, angMom: 0, maxSpeed: 0, simTime: 0,
+  fluidCells: 0, fillVolume: 0, outside: 0, comX: 0.5, comY: 0.5, angMom: 0,
+  bubbles: 0, activity: 0, foamSum: 0, maxSpeed: 0, simTime: 0,
 };
 
 function stepOnce(dt) {
   // The tank accelerates by a, so in the tank frame the water feels g − a.
-  sim.step(dt, input.gx - input.ax, input.gy - input.ay, input.spin, input.alpha);
+  const fx = input.gx - input.ax, fy = input.gy - input.ay;
+  sim.step(dt, fx, fy, input.spin, input.alpha);
+  bubbles.step(dt, fx, fy);
   stats.simTime += dt;
 }
 
@@ -28,7 +34,8 @@ function writeOut(out) {
   const invW = 1 / ((sim.nx - 2) * h), invH = 1 / ((sim.ny - 2) * h);
   const minX = h, maxX = (sim.nx - 1) * h, minY = h, maxY = (sim.ny - 1) * h;
   const cx = 0.5 * sim.width, cy = 0.5 * sim.height;
-  let outside = 0, sx = 0, sy = 0, L = 0;
+  const foam = sim.foam;
+  let outside = 0, sx = 0, sy = 0, L = 0, e = 0, fs = 0;
   for (let i = 0; i < n; i++) {
     const x = pos[2 * i], y = pos[2 * i + 1];
     if (!(x >= minX && x <= maxX && y >= minY && y <= maxY)) outside++;
@@ -37,19 +44,38 @@ function writeOut(out) {
     L += (x - cx) * vel[2 * i + 1] - (y - cy) * vel[2 * i];
     out[4 * i] = (x - h) * invW;
     out[4 * i + 1] = (y - h) * invH;
-    out[4 * i + 2] = vel[2 * i];
-    out[4 * i + 3] = vel[2 * i + 1];
+    const vx = vel[2 * i], vy = vel[2 * i + 1];
+    const sp2 = vx * vx + vy * vy;
+    e += sp2;
+    fs += foam[i];
+    out[4 * i + 2] = foam[i];
+    out[4 * i + 3] = Math.sqrt(sp2);
   }
   stats.outside = outside;
   stats.comX = (sx / n - h) * invW;
   stats.comY = (sy / n - h) * invH;
   stats.angMom = L / n;
+  stats.activity = Math.sqrt(e / n);
+  stats.foamSum = fs;
+  // Bubbles after the particles.
+  const base = 4 * n, invWm = 1 / ((sim.nx - 2) * h);
+  const nb = bubbles.count;
+  for (let b = 0; b < nb; b++) {
+    const o = base + 4 * b;
+    out[o] = (bubbles.x[b] - h) * invW;
+    out[o + 1] = (bubbles.y[b] - h) * invH;
+    out[o + 2] = bubbles.r[b] * invWm;
+    const age = bubbles.age[b];
+    out[o + 3] = Math.min(1, age / 0.15);
+  }
+  stats.bubbles = nb;
 }
 
 self.onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') {
     sim = new FlipSim(m.opts);
+    bubbles = new Bubbles(sim);
     clock.reset();
     stats.simTime = 0;
     self.postMessage({
@@ -58,6 +84,7 @@ self.onmessage = (e) => {
       radius: sim.r / ((sim.nx - 2) * sim.h), // particle radius as a fraction of tank width
       cellsX: sim.nx - 2,
       cellsY: sim.ny - 2,
+      maxBubbles: MAX_BUBBLES,
     });
     return;
   }

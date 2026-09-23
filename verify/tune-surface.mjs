@@ -16,7 +16,7 @@ const G = 9.81;
 await page.evaluate((G) => { window.__spec = { x: 0, y: G, shake: 0 }; const t0 = performance.now(); setInterval(() => { const t = (performance.now() - t0) / 1000, s = window.__spec, a = s.shake * Math.sin(2 * Math.PI * 5 * t);
   window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x: s.x + a, y: s.y, z: 0 }, acceleration: { x: a, y: 0, z: 0 }, rotationRate: { alpha: 0, beta: 0, gamma: 0 }, interval: 16 })); }, 16); }, G);
 const waitSim = async (sec) => { const s0 = await page.evaluate(() => window.__water.sim.stats ? window.__water.sim.stats.simTime : 0); while ((await page.evaluate(() => window.__water.sim.stats ? window.__water.sim.stats.simTime : 0)) - s0 < sec) await page.waitForTimeout(100); };
-const scenes = [['calm', { x: 0, y: G, shake: 0 }, 3], ['tilt', { x: G * Math.sin(0.5), y: G * Math.cos(0.5), shake: 0 }, 1.2], ['shake', { x: 0, y: G, shake: 22 }, 1.0]];
+const scenes = [['calm', { x: 0, y: G, shake: 0 }, 3], ['shake2', { x: 0, y: G, shake: 22 }, 1.6], ['tilt', { x: G * Math.sin(0.5), y: G * Math.cos(0.5), shake: 0 }, 1.2], ['shake', { x: 0, y: G, shake: 22 }, 1.0]];
 for (const [scene, spec, sec] of scenes) {
   await page.evaluate((s) => { window.__spec = s; window.__water.renderer.passes.water = false; }, spec);
   await waitSim(sec);

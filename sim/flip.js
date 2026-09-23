@@ -99,6 +99,12 @@ export class FlipSim {
     this.cellParticleIds = new Int32Array(count);
     this._pos2 = new Float32Array(2 * count);
     this._vel2 = new Float32Array(2 * count);
+    // Per-particle foam (0..1), permuted with the particles by the spatial sort.
+    this.foam = new Float32Array(count);
+    this._foam2 = new Float32Array(count);
+    this.stepVel = new Float32Array(2 * count); // velocities at the start of a step
+    this.foamTau = 0.9; // s, foam decay time constant
+    this.impact = new Float32Array(count); // last step's relative impact accel (for bubbles)
     this.rhs = new Float64Array(n);
     this.smoothDensity = new Float32Array(n);
     this.stA = new Float32Array(n);
@@ -138,6 +144,7 @@ export class FlipSim {
     this.vmax = (maxTravel * 3) / dt;
     const sdt = dt / sub;
     this._pushApart(this.separationIters);
+    this.stepVel.set(this.vel);
     for (let s = 0; s < sub; s++) {
       // Forces → grid → projection → back to particles → advect with the
       // divergence-free velocity. (Advecting with v+g·dt *before* projecting
@@ -152,6 +159,52 @@ export class FlipSim {
       this._toParticles();
       this._advect(sdt);
       this._collide();
+    }
+    this._updateFoam(dt, fx, fy);
+  }
+
+  // Foam: whitewater appears where the liquid is violently decelerated
+  // (impacts, crashing crests) and in fast spray, then decays. The impact
+  // measure is the particle's actual acceleration |dv/dt|, thresholded above
+  // the largest body force (|g − a_tank| ≤ ~40 m/s²): water resting or sloshing
+  // under the body force alone stays clear, a sudden stop does not.
+  _updateFoam(dt, fx, fy) {
+    const { vel, stepVel, foam, impact, pos, particleDensity, ny, invH } = this;
+    const decay = Math.exp(-dt / this.foamTau);
+    const inv = 1 / dt, rest = this.restDensity;
+    const bodyA = Math.sqrt(fx * fx + fy * fy);
+    const thresh = Math.max(60, bodyA * 1.5);
+    for (let i = 0, n = this.numParticles; i < n; i++) {
+      const vx = vel[2 * i], vy = vel[2 * i + 1];
+      const ax = (vx - stepVel[2 * i]) * inv;
+      const ay = (vy - stepVel[2 * i + 1]) * inv;
+      const a = Math.sqrt(ax * ax + ay * ay);
+      impact[i] = a;
+      let gen = (a - thresh) / 220;
+      // Fast spray in sparse air cells turns white.
+      const c = Math.floor(pos[2 * i] * invH) * ny + Math.floor(pos[2 * i + 1] * invH);
+      if (rest > 0 && particleDensity[c] < 0.35 * rest && vx * vx + vy * vy > 0.09) gen = gen > 0.4 ? gen : 0.4;
+      gen = gen < 0 ? 0 : gen > 1 ? 1 : gen;
+      const f = foam[i] * decay;
+      foam[i] = f > gen ? f : gen;
+    }
+  }
+
+  // Bilinear grid velocity at (x, y) (m, m/s) into out[0..1].
+  sampleVelocity(x, y, out) {
+    const { nx, ny, h, invH, u, v } = this;
+    const h2 = 0.5 * h;
+    x = x < h ? h : x > (nx - 1) * h ? (nx - 1) * h : x;
+    y = y < h ? h : y > (ny - 1) * h ? (ny - 1) * h : y;
+    for (let comp = 0; comp < 2; comp++) {
+      const offX = comp === 0 ? 0 : h2, offY = comp === 0 ? h2 : 0;
+      const f = comp === 0 ? u : v;
+      const x0 = Math.min(Math.floor((x - offX) * invH), nx - 2);
+      const tx = (x - offX - x0 * h) * invH;
+      const y0 = Math.min(Math.floor((y - offY) * invH), ny - 2);
+      const ty = (y - offY - y0 * h) * invH;
+      out[comp] = (1 - tx) * (1 - ty) * f[x0 * ny + y0] + tx * (1 - ty) * f[(x0 + 1) * ny + y0] +
+        tx * ty * f[(x0 + 1) * ny + y0 + 1] + (1 - tx) * ty * f[x0 * ny + y0 + 1];
     }
   }
 
@@ -211,15 +264,16 @@ export class FlipSim {
     for (let c = 0; c < nc; c++) { first[c] = acc; acc += counts[c]; }
     first[nc] = acc;
     // Scatter into the spare buffers, then swap.
-    const npos = this._pos2, nvel = this._vel2;
+    const npos = this._pos2, nvel = this._vel2, nfoam = this._foam2, foam = this.foam;
     for (let c = 0; c < nc; c++) counts[c] = first[c];
     for (let i = 0; i < np; i++) {
       const k = counts[cellOf[i]]++;
       npos[2 * k] = pos[2 * i]; npos[2 * k + 1] = pos[2 * i + 1];
       nvel[2 * k] = vel[2 * i]; nvel[2 * k + 1] = vel[2 * i + 1];
+      nfoam[k] = foam[i];
     }
-    this._pos2 = pos; this._vel2 = vel;
-    this.pos = pos = npos; this.vel = vel = nvel;
+    this._pos2 = pos; this._vel2 = vel; this._foam2 = foam;
+    this.pos = pos = npos; this.vel = vel = nvel; this.foam = nfoam;
 
     // Each pair is visited once: the rest of this cell + the next cell in the
     // same column, and the three cells of the next column (all contiguous

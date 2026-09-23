@@ -15,16 +15,18 @@
 import { program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 
 const SPLAT_VS = `#version 300 es
-layout(location = 0) in vec4 aParticle;
+layout(location = 0) in vec4 aParticle;   // x, y, foam, speed
 uniform float uPointSize;   // blob diameter in target pixels
 uniform vec2 uRadiusN;      // particle radius as fraction of tank (x, y)
 out float vW;
+out float vFoam;
 void main() {
   // Particles live in [r, 1-r]; stretch that onto [0, 1] so water touches the glass.
   vec2 p = (aParticle.xy - uRadiusN) / (1.0 - 2.0 * uRadiusN);
   // Instance 0 = the particle, 1..4 = mirror images across left/right/top/bottom.
   int m = gl_InstanceID;
   vW = 1.0;
+  vFoam = aParticle.z;
   if (m == 1) p.x = -p.x;
   else if (m == 2) p.x = 2.0 - p.x;
   else if (m == 3) p.y = -p.y;
@@ -41,15 +43,16 @@ void main() {
 const SPLAT_FS = `#version 300 es
 precision highp float;
 in float vW;
+in float vFoam;
 uniform float uScale;
 out vec4 outT;
 void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(d, d);
   if (r2 > 1.0) discard;
-  // Gaussian, ~0 at the sprite edge.
-  float w = exp(-4.0 * r2) - 0.0183;
-  outT = vec4(w * uScale * vW, 0.0, 0.0, 1.0);
+  // Gaussian, ~0 at the sprite edge. R = thickness, G = foam-weighted thickness.
+  float w = (exp(-4.0 * r2) - 0.0183) * uScale * vW;
+  outT = vec4(w, w * vFoam, 0.0, 1.0);
 }`;
 
 const BLUR_FS = `#version 300 es
@@ -61,21 +64,23 @@ uniform vec2 uDir;       // texel step (one axis)
 uniform float uSigmaR;   // range sigma in thickness units
 uniform float uSigmaS;   // spatial sigma in texels (taps reach 2.5σ, max 10)
 void main() {
-  float c = texture(uSrc, vUv).r;
-  float sum = c, wsum = 1.0;
+  vec2 c2 = texture(uSrc, vUv).rg;
+  float c = c2.r;
+  vec2 sum = c2;
+  float wsum = 1.0;
   int R = int(min(10.0, ceil(2.5 * uSigmaS)));
   for (int i = 1; i <= 10; i++) {
     if (i > R) break;
     float ws = exp(-float(i * i) / (2.0 * uSigmaS * uSigmaS));
     for (int s = -1; s <= 1; s += 2) {
-      float t = texture(uSrc, vUv + uDir * float(i * s)).r;
-      float dr = (t - c) / uSigmaR;
+      vec2 t = texture(uSrc, vUv + uDir * float(i * s)).rg;
+      float dr = (t.r - c) / uSigmaR;   // range weight from thickness only
       float w = ws * exp(-0.5 * dr * dr);
       sum += t * w;
       wsum += w;
     }
   }
-  outT = vec4(sum / wsum, 0.0, 0.0, 1.0);
+  outT = vec4(sum / wsum, 0.0, 1.0);
 }`;
 
 const COMPOSITE_FS = `#version 300 es
@@ -100,6 +105,11 @@ uniform float uDpr;
 uniform float uUseColor;
 uniform float uUseGlow;
 uniform float uUseHighlights;
+uniform float uUseFoam;
+uniform float uUseCaustics;
+uniform float uTime;
+uniform float uActivity;   // rms particle speed (m/s)
+uniform vec2 uCanvas;      // canvas size in px
 
 vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -124,6 +134,55 @@ vec3 studio(vec3 d) {
   float key = pow(max(dot(d, normalize(vec3(-0.35 * side2 + 0.45 * uUp, 0.82))), 0.0), 40.0);
   c += key * vec3(0.9, 0.85, 0.8);
   return c;
+}
+
+vec2 hash2(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return fract(sin(p) * 43758.5453);
+}
+
+// Caustic network: animated Voronoi edges (F2 − F1 small) on a domain-warped
+// plane look like the bright focal lines on a pool floor. Division-free (the
+// classic iterated-sin caustic produced 0/0 NaNs here).
+float causticLayer(vec2 p, float t) {
+  p += 0.35 * vec2(sin(p.y * 1.3 + t), cos(p.x * 1.1 - t * 0.8));
+  vec2 ip = floor(p), fp = fract(p);
+  float f1 = 8.0, f2 = 8.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = 0.5 + 0.4 * sin(t + 6.2831 * hash2(ip + g));
+      float d = length(g + o - fp);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
+    }
+  }
+  float l = 1.0 - smoothstep(0.0, 0.22, f2 - f1);
+  return l * l;
+}
+float causticPattern(vec2 p, float t) {
+  return 0.65 * causticLayer(p, t) + 0.45 * causticLayer(p * 1.7 + 11.0, t * 1.3);
+}
+// Foam texture: clusters of small bubbles. Cellular noise where each cell is
+// a bubble: bright rounded cap near its centre, dark gaps between; each cell
+// randomly present or not, so foam breaks up into clumps instead of a glaze.
+float foamBubbles(vec2 p, float t, float density) {
+  vec2 ip = floor(p), fp = fract(p);
+  float v = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 h = hash2(ip + g);
+      if (h.x > density) continue;                 // this bubble isn't there
+      vec2 o = 0.5 + 0.35 * sin(t * 0.6 + 6.2831 * h);
+      float r = 0.28 + 0.30 * h.y;                  // mixed bubble sizes
+      float d = length(g + o - fp) / r;
+      // Bubble: bright thin rim + soft highlight cap, transparent middle.
+      float rim = smoothstep(0.70, 0.95, d) * (1.0 - smoothstep(0.95, 1.08, d));
+      float cap = exp(-dot(g + o - fp + vec2(0.12, -0.12) * r, g + o - fp + vec2(0.12, -0.12) * r) / (r * r * 0.08));
+      v = max(v, rim * 0.45 + cap * 0.55 + (1.0 - smoothstep(0.0, 1.0, d)) * 0.3);
+    }
+  }
+  return v;
 }
 
 void main() {
@@ -169,6 +228,53 @@ void main() {
     refr.g = texture(uBack, vUv + off).g;
     refr.b = texture(uBack, vUv + off * 1.03).b;
   }
+  // --- M6 caustics ------------------------------------------------------------
+  // Light from the overhead studio is focused by the wavy free surface into a
+  // moving network on the back wall. March up (against gravity) through the
+  // depth field to find the surface above this pixel: its distance h sets the
+  // focal depth / fade and its slope shears the pattern, so the caustics follow
+  // the actual surface shape and die out deep down or under a ceiling of water.
+  vec2 side2c = vec2(uUp.y, -uUp.x);
+  if (uUseCaustics > 0.5) {
+    const float stepCss = 10.0;
+    const float maxH = 24.0 * stepCss;
+    vec2 stepUv = uUp * (stepCss * uDpr) / uCanvas;
+    float hS = -1.0;
+    vec2 q = vUv;
+    float prevB = texture(uDepth, vUv).r;
+    for (int k = 1; k <= 24; k++) {
+      q = vUv + stepUv * float(k);
+      if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) break;
+      float bk = texture(uDepth, q).r;
+      if (bk < 0.5) {
+        // Interpolate the crossing between samples: continuous h, no banding.
+        float fr = clamp((prevB - 0.5) / max(prevB - bk, 1e-4), 0.0, 1.0);
+        hS = (float(k - 1) + fr) * stepCss;
+        q = vUv + stepUv * (float(k - 1) + fr);
+        break;
+      }
+      prevB = bk;
+    }
+    if (hS > 0.0) {
+      vec2 dUv = uDpr * 16.0 / uCanvas;
+      float bx = texture(uDepth, q + vec2(dUv.x, 0.0)).r - texture(uDepth, q - vec2(dUv.x, 0.0)).r;
+      float by = texture(uDepth, q + vec2(0.0, dUv.y)).r - texture(uDepth, q - vec2(0.0, dUv.y)).r;
+      vec2 gb = vec2(bx, by);
+      float gl2 = length(gb);
+      // Surface tilt along the tank (0 for a level surface), smoothly limited.
+      float slope = gl2 > 1e-4 ? dot(gb / gl2, side2c) * smoothstep(0.0, 0.05, gl2) : 0.0;
+      vec2 pcss = vUv * uCanvas / uDpr;
+      float X = dot(pcss, side2c), Y = dot(pcss, uUp);
+      vec2 cp = vec2(X + slope * hS * 0.5, Y * 0.5 + hS * 0.35) / 18.0;
+      float act = clamp(uActivity / 0.12, 0.0, 1.0);
+      float cst = causticPattern(cp, uTime * (0.35 + 1.4 * act));
+      // Sharpest just below the surface, fading with depth and to 0 before the
+      // march limit (no visible cut-off).
+      float fade = exp(-hS / 90.0) * (1.0 - smoothstep(0.6 * maxH, maxH, hS)) * (0.4 + 0.6 * act);
+      refr += vec3(0.050, 0.080, 0.078) * cst * fade;
+    }
+  }
+
   // --- M5 water colour -------------------------------------------------------
   // B: heavily blurred liquid coverage (1/8 res). ≈0.5 at the surface, → 1 deep
   // in the bulk, < 0.5 for drops, tongues and thin sheets. It is the smooth
@@ -215,6 +321,27 @@ void main() {
     float tir = (1.0 - smoothstep(1.0, 9.0, dcss)) * step(0.0, dcss);
     water += vec3(0.85, 0.93, 0.95) * line * 0.55 * edgeW;
     water += vec3(0.10, 0.14, 0.15) * tir * facing;
+  }
+
+  // --- M6 foam -----------------------------------------------------------------
+  // G/R of the blurred splat = the local average particle foam value. Denser
+  // foam = more bubbles present and a whiter, more opaque layer; sparse foam
+  // breaks into scattered clumps.
+  if (uUseFoam > 0.5) {
+    vec2 tf = texture(uThick, vUv).rg * uTScale;
+    float fv = clamp(tf.g / max(tf.r, 0.35), 0.0, 1.0);
+    float fm = smoothstep(0.08, 0.6, fv);
+    if (fm > 0.0) {
+      vec2 pcss = vUv * uCanvas / uDpr;
+      float dens = 0.12 + 0.5 * fv;
+      float b = max(foamBubbles(pcss / 7.0, uTime, dens), 0.75 * foamBubbles(pcss / 4.0 + 31.0, uTime * 1.3, dens * 0.8));
+      float lit = 0.6 + 0.4 * (1.0 - depthF);          // lit from above
+      vec3 foamCol = vec3(0.60, 0.66, 0.68) * lit;
+      // Milky haze: aerated water scatters light, whiter where denser …
+      water = mix(water, foamCol * 0.55, fm * (0.30 + 0.50 * fv));
+      // … with individual bubbles readable on top.
+      water = mix(water, foamCol, fm * clamp(b * (0.35 + 0.4 * fv), 0.0, 1.0));
+    }
   }
 
   vec3 col = mix(bg, water, mask);
@@ -279,15 +406,17 @@ export class SurfacePass {
     this.dpr = 1;
     this.depthSigma = 6; // texels at 1/8 canvas res
     this.depthPasses = 3;
+    this.time = 0;
+    this.activity = 0;
     this.targets = null;
     this._init();
   }
 
   _init() {
     const gl = this.gl;
-    // Float render targets: EXT_color_buffer_float (R16F) where available, else RGBA8.
+    // Float render targets: EXT_color_buffer_float (RG16F: thickness, foam) where available, else RGBA8.
     const f = gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float');
-    this.fmt = f ? { internal: gl.R16F, float: true } : { internal: gl.RGBA8, float: false };
+    this.fmt = f ? { internal: gl.RG16F, float: true } : { internal: gl.RGBA8, float: false };
     this.splat = program(gl, SPLAT_VS, SPLAT_FS, 'splat');
     this.blur = program(gl, FULLSCREEN_VS, BLUR_FS, 'blur');
     this.comp = program(gl, FULLSCREEN_VS, COMPOSITE_FS, 'water');
@@ -307,7 +436,7 @@ export class SurfacePass {
     if (this.targets) for (const t of this.targets) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
     this.targets = [makeTarget(gl, w, h, this.fmt), makeTarget(gl, w, h, this.fmt)];
     if (!this.targets[0].ok && this.fmt.float) {
-      // Some drivers advertise the extension but refuse R16F: fall back to RGBA8.
+      // Some drivers advertise the extension but refuse RG16F: fall back to RGBA8.
       for (const t of this.targets) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
       this.fmt = { internal: gl.RGBA8, float: false };
       this.targets = [makeTarget(gl, w, h, this.fmt), makeTarget(gl, w, h, this.fmt)];
@@ -435,6 +564,11 @@ export class SurfacePass {
     gl.uniform1f(c.u.uUseGlow, passes.glow ? 1 : 0);
     gl.uniform1f(c.u.uUseHighlights, passes.highlights ? 1 : 0);
     gl.uniform1f(c.u.uDpr, this.dpr);
+    gl.uniform1f(c.u.uUseFoam, passes.foam ? 1 : 0);
+    gl.uniform1f(c.u.uUseCaustics, passes.caustics ? 1 : 0);
+    gl.uniform1f(c.u.uTime, this.time);
+    gl.uniform1f(c.u.uActivity, this.activity);
+    gl.uniform2f(c.u.uCanvas, canvasW, canvasH);
     drawFullscreen(gl);
   }
 }

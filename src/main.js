@@ -53,8 +53,9 @@ const CELLS_X = (() => {
   return v >= 16 && v <= 256 ? Math.round(v) : 84;
 })();
 
-const sim = new SimClient((data, count) => {
+const sim = new SimClient((data, count, bubbles) => {
   renderer.particles.upload(data, count);
+  renderer.bubbles.upload(data, count * 4, bubbles);
   stats.particles = count;
 });
 debug.sim = sim;
@@ -77,6 +78,7 @@ function frame(now) {
   if (state.started) {
     sim.update(dt, motion);
     renderer.setGravity(motion.gx, motion.gy);
+    renderer.setTime(now * 0.001, sim.stats ? sim.stats.activity : 0);
     renderer.particles.radius = sim.radius;
   }
   renderer.render();

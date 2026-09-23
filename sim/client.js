@@ -13,6 +13,7 @@ export class SimClient {
     this.radius = 0;
     this.cellsX = 0;
     this.cellsY = 0;
+    this.maxBubbles = 0;
     this.stats = null;
     this.free = []; // ArrayBuffers available to send
     this._msg = { type: 'step', dt: 0, gx: 0, gy: 0, ax: 0, ay: 0, spin: 0, buf: null };
@@ -31,7 +32,8 @@ export class SimClient {
       this.radius = m.radius;
       this.cellsX = m.cellsX;
       this.cellsY = m.cellsY;
-      const bytes = m.count * 4 * 4;
+      this.maxBubbles = m.maxBubbles;
+      const bytes = (m.count + m.maxBubbles) * 4 * 4;
       this.free.length = 0;
       this.free.push(new ArrayBuffer(bytes), new ArrayBuffer(bytes));
       this.ready = true;
@@ -41,8 +43,8 @@ export class SimClient {
     if (m.type === 'frame') {
       this.busy = false;
       this.stats = m;
-      if (m.buf.byteLength === this.count * 16) {
-        this.onFrame(new Float32Array(m.buf), m.count);
+      if (m.buf.byteLength === (this.count + this.maxBubbles) * 16) {
+        this.onFrame(new Float32Array(m.buf), m.count, m.bubbles);
         this.free.push(m.buf);
       }
     }

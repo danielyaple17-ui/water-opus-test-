@@ -45,6 +45,7 @@ export class DebugOverlay {
       particles: this._row('particles'),
       sim: this._row('sim step'),
       leak: this._row('outside / fill'),
+      bubbles: this._row('bubbles / foam'),
       quality: this._row('quality'),
       res: this._row('render px'),
       source: this._row('input'),
@@ -114,6 +115,7 @@ export class DebugOverlay {
     if (ss) {
       v.sim.textContent = `${ss.stepMs.toFixed(2)} ms ×${ss.substeps}`;
       v.leak.textContent = `${ss.outside} / ${ss.fillVolume.toFixed(0)}`;
+      v.bubbles.textContent = `${ss.bubbles} / ${(ss.foamSum / Math.max(1, ss.count)).toFixed(3)}`;
     }
     v.quality.textContent = s.quality;
     v.res.textContent = `${this.renderer.width}×${this.renderer.height}`;

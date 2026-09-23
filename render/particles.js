@@ -1,5 +1,5 @@
-// Plain particle dots (M2 debug view). One interleaved VBO: x, y (tank-normalised,
-// y down), vx, vy (m/s). Uploaded with bufferSubData, never reallocated per frame.
+// Plain particle dots (debug view). One interleaved VBO: x, y (tank-normalised,
+// y down), foam (0..1), speed (m/s); bubbles follow in a second buffer. Uploaded with bufferSubData, never reallocated per frame.
 
 import { program } from './gl.js';
 
@@ -11,7 +11,7 @@ void main() {
   vec2 p = aParticle.xy;
   gl_Position = vec4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, 0.0, 1.0);
   gl_PointSize = uPointSize;
-  vSpeed = length(aParticle.zw);
+  vSpeed = aParticle.w; // (x, y, foam, speed)
 }`;
 
 const FS = `#version 300 es
