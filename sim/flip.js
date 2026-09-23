@@ -122,8 +122,11 @@ export class FlipSim {
     // Pour-in (start screen): begin empty and emit the full volume from a nozzle.
     this.pourRemaining = 0;
     this.sepBoost = 0; // s of extra particle separation left (after pouring)
-    this.pourSpeed = 0.35; // m/s
-    this.pourWidth = 0.009; // m
+    // Stream enters through the top glass edge already falling (as if poured
+    // from above the frame): faster and narrower than a nozzle inside the tank,
+    // same flow rate (width × speed = 3.15 cm²/s), so no visible inlet block.
+    this.pourSpeed = 0.6; // m/s
+    this.pourWidth = 0.00525; // m
     this._seed = 20260923;
     if (opts.pour) {
       this.pourRemaining = count;
@@ -243,7 +246,7 @@ export class FlipSim {
     const cx = 0.5 * this.width, cy = 0.5 * this.height;
     const tx = ux !== 0 ? ((ux > 0 ? this.width - this.h : this.h) - cx) / ux : 1e9;
     const ty = uy !== 0 ? ((uy > 0 ? this.height - this.h : this.h) - cy) / uy : 1e9;
-    const t = Math.min(tx, ty) - 2.5 * this.h;
+    const t = Math.min(tx, ty) - 0.6 * this.h; // inlet flush with the glass
     const nx0 = cx + ux * t, ny0 = cy + uy * t; // nozzle centre
     const len = this.pourSpeed * dt;
     const area = this.pourWidth * len;
