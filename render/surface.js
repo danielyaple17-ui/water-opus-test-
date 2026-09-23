@@ -154,6 +154,7 @@ uniform float uUseGlow;
 uniform float uUseHighlights;
 uniform float uUseFoam;
 uniform float uUseCaustics;
+uniform float uWideGlint;   // 1: glint from the wide-stencil normal (default)
 uniform float uTime;
 uniform float uActivity;   // rms particle speed (m/s)
 uniform vec2 uCanvas;      // canvas size in px
@@ -258,6 +259,21 @@ void main() {
   vec3 n = normalize(vec3(outward * ct, sqrt(max(1.0 - ct * ct, 0.0)) + 1e-3));
   // Faint interior undulation from the thickness field so bulk water isn't a flat sheet.
   n = normalize(n + vec3(-g * uNormalK * 0.15 * t, 0.0));
+  // Glint normal: same rim profile, but the edge direction from a 3× wider
+  // stencil. The power-900 specular lobe otherwise locks onto texel-scale
+  // wiggles of the 2-texel gradient and breaks into a chain of dots.
+  vec3 nS = n;
+  if (ct > 0.0 && uWideGlint > 0.5) {
+    float ew = 6.0;
+    float wl = min(texture(uThick, tUv - vec2(uTexel.x * ew, 0.0)).r * uTScale, 1.0);
+    float wr = min(texture(uThick, tUv + vec2(uTexel.x * ew, 0.0)).r * uTScale, 1.0);
+    float wd = min(texture(uThick, tUv - vec2(0.0, uTexel.y * ew)).r * uTScale, 1.0);
+    float wu = min(texture(uThick, tUv + vec2(0.0, uTexel.y * ew)).r * uTScale, 1.0);
+    vec2 gw = vec2(wr - wl, wu - wd);
+    float gwl = length(gw);
+    vec2 outW = gwl > 1e-5 ? -gw / gwl : outward;
+    nS = normalize(vec3(outW * ct, sqrt(max(1.0 - ct * ct, 0.0)) + 1e-3));
+  }
 
   float Tc = clamp(T, 0.0, 1.4);
   // Crisp, antialiased silhouette at the iso-line.
@@ -380,7 +396,7 @@ void main() {
     vec3 L = normalize(vec3(-0.35 * side2 + 0.62 * uUp, 0.70));
     vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
     // Small and hot, so it survives tone mapping as a pin-point and blooms.
-    water += vec3(1.0, 0.97, 0.92) * 16.0 * pow(max(dot(n, H), 0.0), 900.0);
+    water += vec3(1.0, 0.97, 0.92) * 16.0 * pow(max(dot(nS, H), 0.0), 900.0);
     // Waterline: the meniscus seen edge-on is a bright hairline just inside the
     // edge, over a silvery band where the underside of the surface totally
     // internally reflects. Strongest on edges facing world-up (the free surface).
@@ -467,6 +483,7 @@ export class SurfacePass {
     this.sigmaS = 5.0;
     this.rimCss = 5; // meniscus/edge rounding width in CSS px
     this.dpr = 1;
+    this.wideGlint = true; // A/B toggle for verify (beaded vs smooth glints)
     this.depthSigma = 6; // texels at 1/8 canvas res
     this.depthPasses = 3;
     this.time = 0;
@@ -648,6 +665,7 @@ export class SurfacePass {
     gl.uniform1f(c.u.uDpr, this.dpr);
     gl.uniform1f(c.u.uUseFoam, passes.foam ? 1 : 0);
     gl.uniform1f(c.u.uUseCaustics, passes.caustics ? 1 : 0);
+    gl.uniform1f(c.u.uWideGlint, this.wideGlint ? 1 : 0);
     gl.uniform1f(c.u.uTime, this.time);
     gl.uniform1f(c.u.uActivity, this.activity);
     gl.uniform2f(c.u.uCanvas, canvasW, canvasH);
