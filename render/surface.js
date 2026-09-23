@@ -185,6 +185,15 @@ vec3 studio(vec3 d) {
   return c;
 }
 
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
+  float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
+  float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+  float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 vec2 hash2(vec2 p) {
   p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
   return fract(sin(p) * 43758.5453);
@@ -427,8 +436,10 @@ void main() {
       // mass of packed bubbles rather than paint; it decays with the foam.
       float ww = smoothstep(0.22, 0.45, fv);
       if (ww > 0.0) {
-        vec2 pw = vUv * uCanvas / uDpr / 5.0;
-        float mott = 0.75 + 0.25 * sin(pw.x * 1.7 + 1.3 * sin(pw.y * 1.1)) * sin(pw.y * 1.9 + uTime * 0.7);
+        // Non-periodic value noise (two octaves, ~12 and ~5 CSS px): a sin×sin
+        // mottle read as a woven checker pattern.
+        vec2 pw = vUv * uCanvas / uDpr / 12.0 + vec2(0.0, uTime * 0.15);
+        float mott = 0.62 + 0.26 * vnoise(pw) + 0.12 * vnoise(pw * 2.4 + 7.0);
         water = mix(water, vec3(0.78, 0.84, 0.86) * lit * mott, ww * 0.75);
       }
     }

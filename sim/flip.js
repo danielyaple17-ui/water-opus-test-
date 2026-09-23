@@ -214,13 +214,17 @@ export class FlipSim {
     const inv = 1 / dt, rest = this.restDensity;
     const bodyA = Math.sqrt(fx * fx + fy * fy);
     const thresh = Math.max(60, bodyA * 1.5);
+    // Impact accel → foam: 1/140 makes hard impacts white (1/220 never did).
+    // While a pour settles, the extra separation passes push the randomly packed
+    // particles hard; those aren't impacts, so keep the weaker 1/220 then.
+    const genK = this.sepBoost > 0 ? 1 / 220 : 1 / 140;
     for (let i = 0, n = this.numParticles; i < n; i++) {
       const vx = vel[2 * i], vy = vel[2 * i + 1];
       const ax = (vx - stepVel[2 * i]) * inv;
       const ay = (vy - stepVel[2 * i + 1]) * inv;
       const a = Math.sqrt(ax * ax + ay * ay);
       impact[i] = a;
-      let gen = (a - thresh) / 140; // 220 m/s² → 1 was too weak for whitewater at hard impacts
+      let gen = (a - thresh) * genK;
       // Fast spray in sparse air cells turns white.
       const c = Math.floor(pos[2 * i] * invH) * ny + Math.floor(pos[2 * i + 1] * invH);
       if (rest > 0 && particleDensity[c] < 0.35 * rest && vx * vx + vy * vy > 0.09) gen = gen > 0.4 ? gen : 0.4;
