@@ -44,12 +44,17 @@ try {
       twist: (t) => { const th = Math.PI * Math.min(t, 1); return { ax: G * Math.sin(th), ay: G * Math.cos(th), lin: 0, alpha: t < 1 ? 180 : 0, hold: th }; },
       twisted: () => ({ ax: 0, ay: -G, lin: 0, alpha: 0 }),
     };
-    window.__setMode = (m) => { window.__mode = m; window.__modeT0 = performance.now(); };
+    // Short pulses are timed in *sim* time: under software GL the sim runs at
+    // 0.4–0.8× real time, so a 100 ms wall-clock pulse only reached the sim as
+    // 40–80 ms of push and the jerk check became flaky, then failed outright.
+    const simClock = { jerk: true };
+    const simNow = () => (window.__water.sim.stats ? window.__water.sim.stats.simTime : 0);
+    window.__setMode = (m) => { window.__mode = m; window.__modeT0 = performance.now(); window.__modeSim0 = simNow(); };
     window.__setMode('rest');
     window.__samples = [];
     setInterval(() => {
       const t = (performance.now() - window.__modeT0) / 1000;
-      const s = modes[window.__mode](t);
+      const s = modes[window.__mode](simClock[window.__mode] ? simNow() - window.__modeSim0 : t);
       window.dispatchEvent(new DeviceMotionEvent('devicemotion', {
         accelerationIncludingGravity: { x: s.ax, y: s.ay, z: 0 },
         acceleration: { x: s.lin, y: 0, z: 0 },
