@@ -41,6 +41,7 @@ export class FlipSim {
     this.height = this.ny * h;
     this.flipRatio = flipRatio;
     this.pressureCycles = pressureCycles;
+    this.pressureTol = 0.02; // stop V-cycles once max|r| ≤ 2% of max|rhs|
     this.separationIters = separationIters;
     this.density = density;
 
@@ -118,6 +119,11 @@ export class FlipSim {
     this.maxSpeed = 0;
     this.substeps = 1;
     this.vmax = 1e9;
+    this.vlim = 1e9;
+    this.cflCells = opts.cflCells ?? 4; // cells a particle may cross per substep (6 was tried: noisier, −1.6% volume)
+    this.maxSubsteps = opts.maxSubsteps ?? 3;
+    this.fast1 = 0;
+    this.fast2 = 0;
     this.driftK = 0.1;
     this.driftBand = 0.02;
     // Effective kinematic viscosity (m²/s). Far above water's 1e-6: in 2D the
@@ -136,12 +142,16 @@ export class FlipSim {
   // rad/s², + = clockwise on screen); they add Coriolis, centrifugal and Euler
   // forces about the tank centre.
   step(dt, fx, fy, omega = 0, alpha = 0) {
-    const maxTravel = 4 * this.h;
-    let sub = Math.ceil((this.maxSpeed * dt) / maxTravel);
-    sub = sub < 1 ? 1 : sub > 3 ? 3 : sub;
+    const maxTravel = this.cflCells * this.h;
+    // Substeps from how many particles are too fast, not the single fastest one:
+    // a few outliers (spray, surface jitter) shouldn't double the cost of a calm
+    // pool; they're covered by the hard speed cap and wall clamping.
+    const allow = Math.max(4, this.numParticles * 0.002);
+    const sub = this.fast1 <= allow ? 1 : this.fast2 <= allow || this.maxSubsteps < 3 ? 2 : 3;
     this.substeps = sub;
-    // Hard speed limit: what 3 substeps can carry (≈1.2 m/s at 84 cells across).
-    this.vmax = (maxTravel * 3) / dt;
+    this.vlim = maxTravel / dt; // max travel per step at 1 substep
+    // Hard speed limit: 12 cells per step (≈1.2 m/s at 84 cells across).
+    this.vmax = (12 * this.h) / dt;
     const sdt = dt / sub;
     this._pushApart(this.separationIters);
     this.stepVel.set(this.vel);
@@ -335,42 +345,50 @@ export class FlipSim {
   _toGrid() {
     const { nx, ny, h, invH, pos, vel, u, v, du, dv, cellType, s } = this;
     const np = this.numParticles;
-    this.prevU.set(u);
-    this.prevV.set(v);
     u.fill(0); v.fill(0); du.fill(0); dv.fill(0);
-
     for (let c = 0; c < this.numCells; c++) cellType[c] = s[c] === 0 ? SOLID : AIR;
-    for (let i = 0; i < np; i++) {
-      const xi = Math.min(Math.max(Math.floor(pos[2 * i] * invH), 0), nx - 1);
-      const yi = Math.min(Math.max(Math.floor(pos[2 * i + 1] * invH), 0), ny - 1);
-      const c = xi * ny + yi;
-      if (cellType[c] === AIR) cellType[c] = FLUID;
-    }
 
-    const h2 = 0.5 * h;
-    for (let comp = 0; comp < 2; comp++) {
-      const offX = comp === 0 ? 0 : h2, offY = comp === 0 ? h2 : 0;
-      const f = comp === 0 ? u : v, d = comp === 0 ? du : dv;
-      for (let i = 0; i < np; i++) {
-        let x = pos[2 * i], y = pos[2 * i + 1];
-        x = x < h ? h : x > (nx - 1) * h ? (nx - 1) * h : x;
-        y = y < h ? h : y > (ny - 1) * h ? (ny - 1) * h : y;
-        const x0 = Math.min(Math.floor((x - offX) * invH), nx - 2);
-        const tx = (x - offX - x0 * h) * invH;
-        const x1 = Math.min(x0 + 1, nx - 1);
-        const y0 = Math.min(Math.floor((y - offY) * invH), ny - 2);
-        const ty = (y - offY - y0 * h) * invH;
-        const y1 = Math.min(y0 + 1, ny - 1);
+    // One pass per particle: mark its cell FLUID and splat both velocity
+    // components (u lives at (i, j+½), v at (i+½, j) in cell units).
+    const xmax = nx - 1, ymax = ny - 1;
+    for (let i = 0; i < np; i++) {
+      let fx = pos[2 * i] * invH, fy = pos[2 * i + 1] * invH;
+      fx = fx < 1 ? 1 : fx > xmax ? xmax : fx;
+      fy = fy < 1 ? 1 : fy > ymax ? ymax : fy;
+      const ci = Math.min(Math.floor(fx), nx - 1), cj = Math.min(Math.floor(fy), ny - 1);
+      const cc = ci * ny + cj;
+      if (cellType[cc] === AIR) cellType[cc] = FLUID;
+      const vx = vel[2 * i], vy = vel[2 * i + 1];
+      // u: x at face, y at centre.
+      {
+        const x0 = Math.min(Math.floor(fx), nx - 2), tx = fx - x0, x1 = Math.min(x0 + 1, nx - 1);
+        const gy = fy - 0.5;
+        const y0 = Math.min(Math.floor(gy), ny - 2), ty = gy - y0, y1 = Math.min(y0 + 1, ny - 1);
         const sx = 1 - tx, sy = 1 - ty;
         const d0 = sx * sy, d1 = tx * sy, d2 = tx * ty, d3 = sx * ty;
         const n0 = x0 * ny + y0, n1 = x1 * ny + y0, n2 = x1 * ny + y1, n3 = x0 * ny + y1;
-        const pv = vel[2 * i + comp];
-        f[n0] += pv * d0; d[n0] += d0;
-        f[n1] += pv * d1; d[n1] += d1;
-        f[n2] += pv * d2; d[n2] += d2;
-        f[n3] += pv * d3; d[n3] += d3;
+        u[n0] += vx * d0; du[n0] += d0;
+        u[n1] += vx * d1; du[n1] += d1;
+        u[n2] += vx * d2; du[n2] += d2;
+        u[n3] += vx * d3; du[n3] += d3;
       }
-      for (let c = 0; c < this.numCells; c++) if (d[c] > 0) f[c] /= d[c];
+      // v: x at centre, y at face.
+      {
+        const gx = fx - 0.5;
+        const x0 = Math.min(Math.floor(gx), nx - 2), tx = gx - x0, x1 = Math.min(x0 + 1, nx - 1);
+        const y0 = Math.min(Math.floor(fy), ny - 2), ty = fy - y0, y1 = Math.min(y0 + 1, ny - 1);
+        const sx = 1 - tx, sy = 1 - ty;
+        const d0 = sx * sy, d1 = tx * sy, d2 = tx * ty, d3 = sx * ty;
+        const n0 = x0 * ny + y0, n1 = x1 * ny + y0, n2 = x1 * ny + y1, n3 = x0 * ny + y1;
+        v[n0] += vy * d0; dv[n0] += d0;
+        v[n1] += vy * d1; dv[n1] += d1;
+        v[n2] += vy * d2; dv[n2] += d2;
+        v[n3] += vy * d3; dv[n3] += d3;
+      }
+    }
+    for (let c = 0; c < this.numCells; c++) {
+      if (du[c] > 0) u[c] /= du[c];
+      if (dv[c] > 0) v[c] /= dv[c];
     }
 
     // Faces touching a solid cell keep zero normal velocity (walls are static in the tank frame).
@@ -504,7 +522,7 @@ export class FlipSim {
     }
     const st = this.surfaceTension > 0 && rest > 0;
     if (st) this._surfaceTensionGhost(dt);
-    this.mg.solve(cellType, rhs, q, this.pressureCycles);
+    this.mg.solve(cellType, rhs, q, this.pressureCycles, this.pressureTol);
     // Air cells bordering fluid carry the Laplace pressure jump σκ (ghost fluid).
     if (st) {
       const ghost = this.ghost;
@@ -647,7 +665,8 @@ export class FlipSim {
     // Speed limit (CFL safety at the substep cap) + max speed for next step's substep count.
     const vmax = this.vmax;
     const vmax2 = vmax * vmax;
-    let m2 = 0;
+    const l1 = this.vlim * this.vlim, l2 = 4 * l1;
+    let m2 = 0, f1 = 0, f2 = 0;
     for (let i = 0; i < np; i++) {
       const vx = vel[2 * i], vy = vel[2 * i + 1];
       let s2 = vx * vx + vy * vy;
@@ -657,7 +676,41 @@ export class FlipSim {
         s2 = vmax2;
       }
       if (s2 > m2) m2 = s2;
+      if (s2 > l1) { f1++; if (s2 > l2) f2++; }
     }
     this.maxSpeed = Math.sqrt(m2);
+    this.fast1 = f1;
+    this.fast2 = f2;
+  }
+
+  // Rebuild the simulation at a different resolution without losing the water
+  // (quality-level changes). The new sim is constructed with the same fill, so
+  // its particle count matches the conserved water volume at the new spacing;
+  // its particles are then resampled from the old ones (position mapped through
+  // the tank interior, velocity and foam copied, sub-spacing jitter to break
+  // duplicates; separation resolves overlaps within a few steps).
+  static resampleFrom(old, opts) {
+    const sim = new FlipSim(opts);
+    const No = old.numParticles, Nn = sim.numParticles;
+    const oiw = (old.nx - 2) * old.h, oih = (old.ny - 2) * old.h;
+    const niw = (sim.nx - 2) * sim.h, nih = (sim.ny - 2) * sim.h;
+    const r = sim.r;
+    let seed = 987654321;
+    const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) - 0.5; };
+    for (let k = 0; k < Nn; k++) {
+      const i = Math.min(No - 1, Math.floor((k * No) / Nn));
+      const up = Nn > No; // upsampling duplicates particles: jitter them apart
+      sim.pos[2 * k] = sim.h + ((old.pos[2 * i] - old.h) / oiw) * niw + (up ? rnd() * 2 * r : 0);
+      sim.pos[2 * k + 1] = sim.h + ((old.pos[2 * i + 1] - old.h) / oih) * nih + (up ? rnd() * 2 * r : 0);
+      sim.vel[2 * k] = old.vel[2 * i];
+      sim.vel[2 * k + 1] = old.vel[2 * i + 1];
+      sim.foam[k] = old.foam[i];
+    }
+    sim._collide();
+    // Rest density of the hex packing (spacing 2r × √3r, r = 0.3h): particles per
+    // cell, the value the first step would measure on a fresh, undisturbed pool.
+    sim.restDensity = (sim.h * sim.h) / (2 * r * Math.sqrt(3) * r);
+    sim.maxSpeed = old.maxSpeed;
+    return sim;
   }
 }

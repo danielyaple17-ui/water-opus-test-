@@ -23,7 +23,16 @@ export class SimClient {
 
   init(opts) {
     this.ready = false;
+    this.opts = opts;
     this.worker.postMessage({ type: 'init', opts });
+  }
+
+  // Change grid resolution, keeping the current water (see FlipSim.resampleFrom).
+  resample(cellsX) {
+    if (!this.opts || this.opts.cellsX === cellsX) return;
+    this.opts = { ...this.opts, cellsX };
+    this.ready = false;
+    this.worker.postMessage({ type: 'resample', opts: this.opts });
   }
 
   _onMessage(m) {

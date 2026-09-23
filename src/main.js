@@ -6,6 +6,7 @@ import { DebugOverlay } from '../ui/debug.js';
 import { Stage, tryLockPortrait } from '../ui/stage.js';
 import { Stats } from '../ui/stats.js';
 import { SimClient } from '../sim/client.js';
+import { QualityController, LEVELS } from './quality.js';
 
 const $ = (id) => document.getElementById(id);
 const stageEl = $('stage');
@@ -47,11 +48,27 @@ const state = {
 
 // Physical tank: a phone-sized glass, 15 cm tall, width from the stage aspect.
 const TANK_HEIGHT_M = 0.15;
-// High quality; M7 makes this adaptive. `?cells=N` overrides (testing / slow devices).
-const CELLS_X = (() => {
-  const v = Number(new URLSearchParams(location.search).get('cells'));
-  return v >= 16 && v <= 256 ? Math.round(v) : 84;
+// Quality: automatic by default (starts at High). `?q=low|med|high|ultra` pins a
+// level; `?cells=N` pins the sim grid (testing / slow devices).
+const params = new URLSearchParams(location.search);
+const Q_NAMES = ['low', 'med', 'high', 'ultra'];
+const forcedQ = Q_NAMES.indexOf((params.get('q') || '').toLowerCase());
+const CELLS_OVERRIDE = (() => {
+  const v = Number(params.get('cells'));
+  return v >= 16 && v <= 256 ? Math.round(v) : 0;
 })();
+const cellsFor = (level) => CELLS_OVERRIDE || LEVELS[level].cells;
+
+function applyQuality(level) {
+  const L = LEVELS[level];
+  renderer.renderScale = L.renderScale;
+  renderer.surface.blurPasses = L.blurPasses;
+  renderer.surface.depthPasses = L.depthPasses;
+  renderer.resize(stage.width, stage.height);
+  if (state.started) sim.resample(cellsFor(level));
+  stats.quality = L.name;
+}
+const quality = new QualityController(applyQuality, { initial: forcedQ >= 0 ? forcedQ : 2, auto: forcedQ < 0 });
 
 const sim = new SimClient((data, count, bubbles) => {
   renderer.particles.upload(data, count);
@@ -62,7 +79,7 @@ debug.sim = sim;
 
 function initSim() {
   const aspect = stage.width / stage.height;
-  sim.init({ worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: CELLS_X, fill: 0.45 });
+  sim.init({ worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: cellsFor(quality.level), fill: 0.45 });
 }
 
 let last = 0;
@@ -79,6 +96,7 @@ function frame(now) {
     sim.update(dt, motion);
     renderer.setGravity(motion.gx, motion.gy);
     renderer.setTime(now * 0.001, sim.stats ? sim.stats.activity : 0);
+    quality.update(dt, sim.stats ? sim.stats.simTime : -1);
     renderer.particles.radius = sim.radius;
   }
   renderer.render();
@@ -117,4 +135,12 @@ if (navigator.maxTouchPoints === 0) motion.attach();
 requestAnimationFrame(frame);
 
 // Test / debugging hook (read-only use by verify scripts).
-window.__water = { state, stats, motion, renderer, sim, debug, stage };
+applyQuality(quality.level);
+debug.quality = quality;
+window.addEventListener('keydown', (e) => {
+  const k = '1234'.indexOf(e.key);
+  if (k >= 0) quality.force(k);
+  if (e.key === 'a' || e.key === 'A') quality.auto = true;
+});
+
+window.__water = { state, stats, motion, renderer, sim, debug, stage, quality };

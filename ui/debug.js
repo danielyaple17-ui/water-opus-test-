@@ -75,6 +75,7 @@ export class DebugOverlay {
       addToggle(name, () => this.renderer.passes[name], (v) => { this.renderer.passes[name] = v; });
     }
     for (const [name, t] of Object.entries(extraToggles)) addToggle(name, t.get, t.set);
+    addToggle('auto quality', () => !this.quality || this.quality.auto, (v) => { if (this.quality) this.quality.auto = v; });
     this.el.append(toggles);
   }
 
@@ -117,7 +118,8 @@ export class DebugOverlay {
       v.leak.textContent = `${ss.outside} / ${ss.fillVolume.toFixed(0)}`;
       v.bubbles.textContent = `${ss.bubbles} / ${(ss.foamSum / Math.max(1, ss.count)).toFixed(3)}`;
     }
-    v.quality.textContent = s.quality;
+    const q = this.quality;
+    v.quality.textContent = q ? `${q.name}${q.auto ? ' (auto)' : ''} · ${q.lastReason}` : s.quality;
     v.res.textContent = `${this.renderer.width}×${this.renderer.height}`;
     v.source.textContent = `${m.source} (${m.permission})`;
     v.g.textContent = `${m.gx.toFixed(2)}, ${m.gy.toFixed(2)}  |${Math.hypot(m.gx, m.gy).toFixed(2)}|`;

@@ -9,12 +9,12 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M4: Surface drawing (thickness, blur, normals) + refraction + Fresnel reflection
 - [x] M5: Color that deepens with thickness, glow through thin water, highlights, waterline
 - [x] M6: Foam, bubbles, caustics
-- [ ] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
+- [x] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
 - [ ] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
 - [ ] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
 - [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M6)
+## Architecture (as of M7)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -23,6 +23,9 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   - tank accel: high-pass (τ=450 ms) linear acceleration, clamped to 30 m/s². Sim must apply **−a** to the water.
   - spin: `rotationRate.alpha` → rad/s, + = clockwise on screen, LP τ=50 ms.
   - Desktop fallback: gravity points from stage centre to the cursor; click-drag = pointer acceleration as tank accel (stage height ≈ 0.15 m).
+- Performance (M7): the multigrid is restricted to the fluid bounding box on every level and stops early once max|r| ≤ 2% of max|rhs| (1–3 V-cycles). Substeps come from how many particles exceed the 1- and 2-substep travel limits (tolerating 0.2% outliers), not from the single fastest particle. P2G is a single pass for u and v plus cell marking, and redundant prevU copies were removed. A CPU worker was kept over a GPU port: stable, measured, and the quality levels guarantee the budget.
+- `FlipSim.resampleFrom(old, opts)` (M7): rebuilds the sim at a new grid resolution from the old particles (position mapped through the interior, velocity and foam copied, jitter when upsampling), with an analytic hex rest density, so quality changes keep the water.
+- `src/quality.js` (M7): Low / Med / High / Ultra = 48 / 64 / 84 / 84 cells (≈7k / 12.5k / 21.7k / 21.7k particles), render scale 0.5 / 0.7 / 0.85 / 1.0 × DPR, blur passes 1 / 2 / 2 / 3, depth-field passes 2 / 2 / 3 / 3. The controller uses 2 s windows of frame time vs the measured display period (60/90/120 Hz) and of the sim's real-time ratio. It downgrades on frame > 1.25 × period or sim < 0.9× real time, upgrades after 8 s of headroom (frame < 1.08 × period and sim > 0.98×), has a 5 s cooldown, won't retry a level it fell from for 60 s, and has a thermal guard (frame EMA +25% over the level's 30 s baseline → drop and cap for 5 min). Slow frames are clamped to 1 s, not discarded. `?q=low|med|high|ultra` pins a level, keys 1–4 force one, `A` or the overlay toggle restores auto; the overlay shows the level and the reason for the last change.
 - `sim/fixed-step.js` – 120 Hz fixed-step accumulator, max 4 steps/frame (drops time rather than spiralling). Runs inside the worker.
 - `sim/flip.js` – 2D FLIP/PIC (95% FLIP) on a MAC grid with a 1-cell solid border, metres, stage frame (y down). Tank 15 cm tall, width from aspect, 84 cells across (86×182 incl. walls), 21,684 particles, hex-packed bottom 45%.
   - Step order: separation (spatially sorted counting-sort hash, 2 single-visit passes) → [forces → P2G → density → viscosity → pressure → G2P → advect → wall clamp] × 1–3 CFL substeps (≤ 4 cells/substep, speed cap ≈ 1.2 m/s).
@@ -51,7 +54,7 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - `render/` – WebGL2 context (context-loss listeners), shader helpers with cached uniform locations, backplate baked once per resize into an SRGB8_ALPHA8 texture (future refraction source), linear→sRGB composite.
 - `ui/debug.js` – triple-tap any corner (or `D`): fps, frame avg/max, CPU ms, particles, quality, render px, input source/permission, gravity, tank accel, spin, gravity compass, per-pass toggles, sensor-sign toggle.
 - `ui/stats.js` – ring-buffer frame stats (no per-frame allocation).
-- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m6.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
+- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m7.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
 
 ## Measurements
 ### M1 (2026-09-22) – headless Chromium, SwiftShader (software GL), 390×844 @2x
@@ -106,19 +109,33 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Iterations: foam as thin cell walls looked like a crackle glaze; tiny bubbles read as dust; ring-heavy bubbles read as bubble-wrap. Settled on a milky haze with sparse, soft bubble clusters. Caustics: multiplying a dark backplate was invisible → additive light; 14 px march quantisation and a hard cut-off made visible steps → an interpolated crossing plus a smooth fade; the classic iterated-sin caustic produced 0/0 NaN streaks → a division-free Voronoi network.
 - Visual (honest): the splash now reads as aerated water (milky froth with small bubbles over clear water), bubbles rise and pop, and light shafts/caustics play under the surface and follow its tilt. Weak points vs a photo: (a) the caustics look like fibrous strands or light shafts rather than the webbed network a real back wall shows; (b) dense foam is grey and flat rather than bright white, and its texture is screen-space, so it doesn't move with the water; (c) the edge-rim and stair-step issues from M4/M5 remain.
 
-## Known Issues (priority order)
-1. **Sim step cost ≈ 11–15 ms on this VM (budget 8.3 ms/step at 120 Hz, one worker core).** Needs a real-device measurement; M7 owns the fix (GPU port or worker optimisation + quality levels picking cellsX/particle count from measured step time). Cheap wins already identified: separation every other step, 2 V-cycles when calm, SIMD-friendly SoA loops.
-2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
-3. Edge look is uniform and slightly jelly-like: the same glossy rim everywhere. Needs variation, e.g. dark refraction band just inside the edge (backplate magnified/inverted), rim strength tied to curvature, sharper and rarer speculars. M10 candidate.
-4. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
-5. Foam texture is screen-space: its bubble cells don't travel with the water (they only drift in place). Fix: advect a foam UV/offset field, or splat per-particle bubble sprites for dense foam. Caustics look like strands, not a network. Both M10 candidates.
-6. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
-7. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
-8. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
-9. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
-10. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
-11. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
-12. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
-13. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
+### M7 (2026-09-23)
+- Worker step, Node on this VM (≈3× slower than a phone-class core), calm / 4 Hz ±22 m/s² shake:
+  - before M7 at 84 cells: 14.0 / 29.3 ms (calm used 1.47 substeps because of outliers; MG 4.0 ms per solve)
+  - after M7: **48 cells 3.3 / 7.5 ms, 64 cells 5.9 / 14.6 ms, 84 cells 10.7 / 27.0 ms** (calm substeps 1.04, MG 2.3 ms). 104 cells: 32 / 43 ms, and noisy at rest (rms 0.15 m/s), so it's not used.
+  - Tried and reverted: CFL 6 cells / max 2 substeps. Shaking dropped to 22 ms, but the calm pool got noisier (1.63 substeps) and volume drifted −1.56%.
+  - Budget reading: a 120 Hz fixed step needs ≤ 8.3 ms/step on one core. On this VM that holds for Low (calm and shaking) and Med (calm). Scaling by ~2.5–3× for an A15, High calm ≈ 4 ms and High violent shake ≈ 9–11 ms (brief slow-motion during the hardest shakes). The controller drops to Med if the sim can't keep real time. **Needs device confirmation (M9).**
+- `node verify/m7.mjs` → pass, 0 console errors. Screenshots `verify/M7/`: auto-settled, poses 02–07 at the settled level, and each forced level (10-level-*-settled, 11-level-*-shake).
+  - Auto controller on SwiftShader (300–500 ms frames): High → Med at 6 s → Low at 15 s, then held (floor) for 55 s. 2 changes, 0 oscillations.
+  - Volume across resampling: High → Low → High, settled fill averaged over 1 s of sim: 6619.7 → 6625.2 (**+0.08%**); Low fills 2.2% less of the tank by the grid metric (partial surface cells at the coarser grid, not lost water). Node round trip 84 → 48 → 104 → 64 → 84: −0.25%, 0 leaks.
+  - Poses at the pinned level (Low): 6,952 particles constant, 0 outside, fill 2114.4 → 2116.3 (**+0.09%**).
+  - Per level in browser (SwiftShader, worker contends with software GL): step calm/shake Low 5.5/10.6, Med 8.5/17.6, High 17.0/40.2, Ultra 17.4/34.0 ms; render px 390×844 / 546×1182 / 663×1435 / 780×1688. Frame 144–405 ms (software GL, not meaningful).
+- Visual: Low is noticeably softer (coarser shapes, fewer small drops) but still clearly water; Ultra and High show air pockets, thin sheets and detached drops.
 
-NEXT: M7 – performance: measure where the worker step goes at 84 cells, optimise (separation every other step when calm, 2 V-cycles when calm, cheaper P2G/G2P) or port pieces to the GPU, then add automatic Low/Med/High/Ultra quality (cells, render scale, blur passes) driven by frame time + worker step time with hysteresis.
+## Known Issues (priority order)
+1. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
+2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
+3. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
+4. Edge look is uniform and slightly jelly-like: the same glossy rim everywhere. Needs variation, e.g. dark refraction band just inside the edge (backplate magnified/inverted), rim strength tied to curvature, sharper and rarer speculars. M10 candidate.
+5. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
+6. Foam texture is screen-space: its bubble cells don't travel with the water (they only drift in place). Fix: advect a foam UV/offset field, or splat per-particle bubble sprites for dense foam. Caustics look like strands, not a network. Both M10 candidates.
+7. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
+8. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
+9. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
+10. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
+11. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
+12. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
+13. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
+14. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
+
+NEXT: M8 – polish: move composite + bubbles into a linear HDR buffer, ACES/AgX tone mapping, highlight-only bloom, glass feel (vignette, faint glass reflections, meniscus curving up at the walls), pour-in start animation, tap-to-splash ripple and two-finger reset; verify poses + pour-in + tap + volume.

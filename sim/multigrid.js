@@ -19,6 +19,9 @@ class Level {
     this.q = new Float64Array(n);
     this.b = new Float64Array(n);
     this.r = new Float64Array(n);
+    // Bounding box of FLUID cells (inclusive, within the solid ring): every
+    // sweep is restricted to it, which roughly halves the work for a calm pool.
+    this.i0 = 1; this.i1 = nx - 2; this.j0 = 1; this.j1 = ny - 2;
   }
 }
 
@@ -36,27 +39,60 @@ export class PressureMG {
     this.postSmooth = 3;
     this.coarseIters = 30;
     this.lastResidual = 0;
+    this.lastCycles = 0;
   }
 
   // type: Int32Array of FLUID/AIR/SOLID for the fine grid; b: right-hand side;
   // q: in/out solution (warm start), both fine-grid sized. Runs `cycles` V-cycles.
-  solve(type, b, q, cycles) {
+  // Runs V-cycles until max|r| ≤ relTol·max|b| (at least 1, at most maxCycles).
+  solve(type, b, q, maxCycles, relTol = 0) {
     const L0 = this.levels[0];
-    const n = L0.nx * L0.ny;
-    for (let c = 0; c < n; c++) {
-      L0.type[c] = type[c];
-      L0.b[c] = type[c] === FLUID ? b[c] : 0;
-      L0.q[c] = type[c] === FLUID ? q[c] : 0;
+    const nx = L0.nx, ny = L0.ny;
+    let i0 = nx, i1 = 0, j0 = ny, j1 = 0, bmax = 0;
+    for (let i = 0; i < nx; i++) {
+      for (let j = 0; j < ny; j++) {
+        const c = i * ny + j;
+        const t = type[c];
+        L0.type[c] = t;
+        if (t === FLUID) {
+          const bc = b[c];
+          L0.b[c] = bc;
+          L0.q[c] = q[c];
+          const a = bc < 0 ? -bc : bc;
+          if (a > bmax) bmax = a;
+          if (i < i0) i0 = i; if (i > i1) i1 = i;
+          if (j < j0) j0 = j; if (j > j1) j1 = j;
+        } else {
+          L0.b[c] = 0;
+          L0.q[c] = 0;
+        }
+      }
     }
+    if (i1 < i0) { q.fill(0); this.lastResidual = 0; this.lastCycles = 0; return; }
+    L0.i0 = i0; L0.i1 = i1; L0.j0 = j0; L0.j1 = j1;
     for (let l = 1; l < this.levels.length; l++) this._coarsenTypes(this.levels[l - 1], this.levels[l]);
-    for (let k = 0; k < cycles; k++) this._vcycle(0);
+    const tol = relTol * bmax;
+    let k = 0, res = 0;
+    while (k < maxCycles) {
+      this._vcycle(0);
+      k++;
+      if (relTol > 0 && k < maxCycles) {
+        res = this._residual(L0);
+        if (res <= tol) break;
+      }
+    }
     q.set(L0.q);
-    this.lastResidual = this._residual(L0);
+    this.lastCycles = k;
+    this.lastResidual = relTol > 0 && k < maxCycles ? res : this._residual(L0);
   }
 
   _coarsenTypes(F, C) {
     const fnx = F.nx, fny = F.ny, cny = C.ny;
     const ft = F.type, ct = C.type;
+    // Coarse cell I covers fine 2I−1..2I, so the fluid box maps to [(i0+1)>>1, (i1+1)>>1].
+    const I0 = Math.max(1, (F.i0 + 1) >> 1), I1 = Math.min(C.nx - 2, (F.i1 + 1) >> 1);
+    const J0 = Math.max(1, (F.j0 + 1) >> 1), J1 = Math.min(cny - 2, (F.j1 + 1) >> 1);
+    C.i0 = I0; C.i1 = I1; C.j0 = J0; C.j1 = J1;
     for (let I = 0; I < C.nx; I++) {
       for (let J = 0; J < cny; J++) {
         let fluid = false, air = false;
@@ -78,12 +114,13 @@ export class PressureMG {
   }
 
   _smooth(L, iters) {
-    const nx = L.nx, ny = L.ny, t = L.type, q = L.q, b = L.b;
+    const ny = L.ny, t = L.type, q = L.q, b = L.b;
+    const i0 = L.i0, i1 = L.i1, j0 = L.j0, j1 = L.j1;
     for (let it = 0; it < iters; it++) {
       for (let color = 0; color < 2; color++) {
-        for (let i = 1; i < nx - 1; i++) {
+        for (let i = i0; i <= i1; i++) {
           const base = i * ny;
-          for (let j = 1 + ((i + color) & 1); j < ny - 1; j += 2) {
+          for (let j = j0 + ((i + j0 + color) & 1); j <= j1; j += 2) {
             const c = base + j;
             if (t[c] !== FLUID) continue;
             let ss = 0, sum = 0, tn;
@@ -100,10 +137,10 @@ export class PressureMG {
 
   // r = b − A q on fluid cells; returns max |r|.
   _residual(L) {
-    const nx = L.nx, ny = L.ny, t = L.type, q = L.q, b = L.b, r = L.r;
+    const ny = L.ny, t = L.type, q = L.q, b = L.b, r = L.r;
     let mx = 0;
-    for (let i = 1; i < nx - 1; i++) {
-      for (let j = 1; j < ny - 1; j++) {
+    for (let i = L.i0; i <= L.i1; i++) {
+      for (let j = L.j0; j <= L.j1; j++) {
         const c = i * ny + j;
         if (t[c] !== FLUID) { r[c] = 0; continue; }
         let ss = 0, sum = 0, tn;
@@ -131,8 +168,8 @@ export class PressureMG {
     const C = this.levels[l + 1];
     // Restrict: coarse rhs = sum of the children's residuals (the H² = 4h² scaling).
     const fnx = L.nx, fny = L.ny, cny = C.ny;
-    for (let I = 0; I < C.nx; I++) {
-      for (let J = 0; J < cny; J++) {
+    for (let I = C.i0; I <= C.i1; I++) {
+      for (let J = C.j0; J <= C.j1; J++) {
         const cc = I * cny + J;
         C.q[cc] = 0;
         if (C.type[cc] !== FLUID) { C.b[cc] = 0; continue; }
@@ -153,12 +190,12 @@ export class PressureMG {
     // Prolongate (bilinear; solid coarse cells excluded and weights renormalised,
     // air coarse cells contribute a zero correction).
     const ct = C.type, cq = C.q;
-    for (let i = 1; i < fnx - 1; i++) {
+    for (let i = L.i0; i <= L.i1; i++) {
       // Fine centre i+0.5 in coarse index units; coarse centre I sits at I.
       const x = (i + 0.5) * 0.5;
       const I0 = Math.floor(x);
       const tx = x - I0;
-      for (let j = 1; j < fny - 1; j++) {
+      for (let j = L.j0; j <= L.j1; j++) {
         const c = i * fny + j;
         if (L.type[c] !== FLUID) continue;
         const y = (j + 0.5) * 0.5;

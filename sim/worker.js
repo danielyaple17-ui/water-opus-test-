@@ -73,11 +73,13 @@ function writeOut(out) {
 
 self.onmessage = (e) => {
   const m = e.data;
-  if (m.type === 'init') {
-    sim = new FlipSim(m.opts);
+  if (m.type === 'init' || m.type === 'resample') {
+    // 'resample' changes resolution (quality level) and keeps the water.
+    sim = m.type === 'resample' && sim ? FlipSim.resampleFrom(sim, m.opts) : new FlipSim(m.opts);
     bubbles = new Bubbles(sim);
     clock.reset();
-    stats.simTime = 0;
+    if (m.type === 'init') stats.simTime = 0;
+    stats.stepMs = 0; stats.stepMsMax = 0;
     self.postMessage({
       type: 'ready',
       count: sim.numParticles,
