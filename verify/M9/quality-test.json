@@ -1,0 +1,126 @@
+{
+  "results": {
+    "fast60": {
+      "final": "Ultra",
+      "changes": 1,
+      "log": [
+        {
+          "t": 12.1,
+          "to": "Ultra",
+          "why": "headroom"
+        }
+      ]
+    },
+    "gpuBound": {
+      "final": "Med",
+      "changes": 3,
+      "log": [
+        {
+          "t": 6.1,
+          "to": "Med",
+          "why": "overload: frame 26.7 ms, sim ×0.99"
+        },
+        {
+          "t": 66.6,
+          "to": "High",
+          "why": "headroom"
+        },
+        {
+          "t": 72.7,
+          "to": "Med",
+          "why": "overload: frame 26.7 ms, sim ×0.99"
+        }
+      ]
+    },
+    "borderline": {
+      "final": "High",
+      "changes": 6,
+      "log": [
+        {
+          "t": 12.1,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 18.1,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        },
+        {
+          "t": 78.6,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 84.7,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        },
+        {
+          "t": 205.7,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 211.7,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        }
+      ]
+    },
+    "simBound": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 6,
+          "to": "Med",
+          "why": "overload: frame 16.7 ms, sim ×0.79"
+        }
+      ]
+    },
+    "thermal": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 86.5,
+          "to": "Med",
+          "why": "thermal: frame time drifted +15%"
+        }
+      ]
+    },
+    "fast120": {
+      "final": "Ultra",
+      "changes": 1,
+      "log": [
+        {
+          "t": 12,
+          "to": "Ultra",
+          "why": "headroom"
+        }
+      ]
+    },
+    "battery": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 0,
+          "to": "Med",
+          "why": "low battery"
+        }
+      ]
+    }
+  },
+  "checks": {
+    "fast60": true,
+    "gpuBound": true,
+    "borderline": true,
+    "simBound": true,
+    "thermal": true,
+    "fast120": true,
+    "battery": true
+  },
+  "pass": true
+}

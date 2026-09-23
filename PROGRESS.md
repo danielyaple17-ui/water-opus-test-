@@ -11,10 +11,10 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M6: Foam, bubbles, caustics
 - [x] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
 - [x] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
-- [ ] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
+- [x] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
 - [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M8)
+## Architecture (as of M9)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -55,11 +55,17 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Pour-in (M8, `sim/flip.js`): `pour: true` starts empty (arrays keep full capacity, `numParticles` grows). Each step a jittered patch, one step long at the rest spacing, is emitted at a nozzle 2.5 cells inside the wall furthest along world-up, flowing along gravity at 0.35 m/s, 9 mm wide (≈1.7 s to fill at High). The rest density is set analytically. One extra separation pass runs while pouring and for 8 s after. Mid-pour quality changes keep the poured fraction.
 - Drift band raised 0.02 → 0.03: a randomly packed pool (poured, or after hard shaking) never calmed with 2%, drift kept firing (rms 0.10–0.12 m/s 20 s later, volume −3%). At 3% it settles in ≈4 s and holds volume within 0.5% (Node A/B).
 - Tap / reset (M8, `ui/touch.js`, worker `impulse`): a still tap (< 12 px, and < 350 ms **or** ≤ 3 rendered frames) splashes. There's a radial kick (r 11 mm, 0.9 m/s) at the tap point with a foam kick and up to 10 bubbles, plus a second kick just below the free surface found by marching against the body force, so a tap anywhere raises a visible crown. A two-finger tap (or `R`) re-inits the sim and pours again. Client coords are mapped through the stage's counter-rotation (`Stage.toStage`). `?pour=0` starts full (used by m1–m7 so their volume baselines stay valid).
+- Robustness (M9):
+  - WebGL context loss: drawing stops, the sim keeps running, uploads are skipped. On `webglcontextrestored` every pass rebuilds its programs, VAOs/VBOs, textures and targets (stale draw counts reset) inside try/catch. If the context isn't back in 5 s (or the restore throws), `#fatal` shows "Graphics were reset. Tap to reload." (`renderer.onContextState`, lost/restored counters).
+  - Pause: `visibilitychange`, `pagehide`/`pageshow` (bfcache). While hidden there are no frames and no step requests, so the worker idles. On resume the elapsed time is dropped (no fast-forward).
+  - Per-frame IO has no message objects: requests and frames are bare transferred ArrayBuffers with the inputs and stats in a 32-float header (`sim/layout.js`), parsed into a preallocated `stats` object with a generation tag to drop stale buffers after resample. The particle VBO grows geometrically (the pour raised it every frame).
+  - Quality controller: per-level exponential back-off (60/120/240 s, never after 3 failures), thermal guard at +15% of the level's baseline (was +25%, which the overload rule always beat), battery cap at Med below 20% when not charging (Battery Status API; iOS lacks it).
+  - `?bench=1[&benchSec=N]` (`ui/bench.js`): pins Ultra → Low, measures calm and injected-shake phases (frame avg/p95/max, worker step, sim ratio) and shows JSON with a Copy button in the overlay. `docs/DEVICE_TESTING.md` covers LAN HTTPS/certs, the benchmark, the sensor-sign check, lifecycle checks and remote debugging.
 - `render/renderer.js` – backplate redesigned in M4 (out-of-focus softbox spill from above, dim warm bokeh glow, mottled frosted texture + grain) so refraction is readable. Passes: backplate, water, blur, refraction, reflection, particles.
 - `render/` – WebGL2 context (context-loss listeners), shader helpers with cached uniform locations, backplate baked once per resize into an SRGB8_ALPHA8 texture (future refraction source), linear→sRGB composite.
 - `ui/debug.js` – triple-tap any corner (or `D`): fps, frame avg/max, CPU ms, particles, quality, render px, input source/permission, gravity, tank accel, spin, gravity compass, per-pass toggles, sensor-sign toggle.
 - `ui/stats.js` – ring-buffer frame stats (no per-frame allocation).
-- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m8.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
+- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m9.mjs`, `quality-test.mjs` (deterministic controller scenarios), `alloc-test.mjs` (precise main-thread heap growth), `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
 
 ## Measurements
 ### M1 (2026-09-22) – headless Chromium, SwiftShader (software GL), 390×844 @2x
@@ -136,8 +142,19 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Test-harness lessons: pointer-event timestamps are *delivery* times, so a 60 ms two-finger tap measured 555–1188 ms under software GL. This led to the frame-count tap rule. Whole-tank rms and even peak speed are poor splash detectors (calm water has single outliers near 0.8 m/s), so the test judges the splash by its whitewater.
 - Visual (honest): the calm tank now reads like a studio product shot (meniscus climbing both walls, thin glass edge highlights, vignette, deep teal gradient, soft bloom on the waterline). The pour is the best moment: a stream necking into drops as it falls (Rayleigh-Plateau-like breakup), plunging with bubbles. Weak spots remain: splashes look glossy/jelly-like with a regular bubble texture; caustics are strand-like; the resting waterline still shows a faint stair-step.
 
+### M9 (2026-09-23)
+- `node verify/quality-test.mjs` → pass (Node, deterministic): fast 60 Hz → Ultra; GPU-bound → Med with ≤3 changes; borderline Ultra fails 3 times (t = 18, 85, 212 s, back-off 60/120 s) then never retried; sim-bound (ratio 0.8) → Med; thermal +20% creep → "thermal" drop at 86 s and cap; 120 Hz detected, no false overload; battery cap → Med. **It caught two real bugs**: an overload/retry cycle that re-tried every ~66 s forever (a hitch every minute on borderline devices), and a thermal guard that could never fire. Both fixed.
+- `node verify/m9.mjs` → pass, 0 console errors. Screenshots `verify/M9/`.
+  - Context loss (WEBGL_lose_context): the sim advanced 1.0 s of sim time while lost; restore rebuilt everything (restoredCount 1, all 21,684 particles drawn); fill 6583.7 → 6615.1 (sloshing noise, within 1%). A second loss left unrestored → "Graphics were reset. Tap to reload." after 5 s.
+  - Hidden tab: 0 s of sim and 0 frames during 3 s hidden; 0.12 s of sim in the 1.5 s after resume (no fast-forward).
+  - Bench mode end to end (2 s phases): 8 rows (4 levels × calm/shake) and a report in the overlay.
+  - Poses after all of the above: particles constant, 0 outside, fill **+0.25%** (calm-to-calm).
+  - Frame (SwiftShader, High): avg 168 ms, worst 867 ms; worker 21 ms/step (contended). Not representative.
+- Allocation (`verify/alloc-test.mjs`, precise heap, 1× DPR, Low): not started 585 B/frame; sim frozen with rendering on **837 B/frame** (the measuring closures themselves plus a ~64 B view); sim running 58–76 KB/frame. Isolation shows the large figure is the transferred ArrayBuffer (≈115 KB at Low) accounted as external memory on each receive. It is moved, not copied, but it still counts as allocation. The app's own per-frame JS allocation is the typed-array view required per transfer.
+- **Real-device testing: not possible from this environment.** Tooling is ready (bench mode, device doc, sensor-sign toggle); results are pending a person with a phone (Known Issue 1).
+
 ## Known Issues (priority order)
-1. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
+1. **Needs a real device (user action): run `?bench=1` on an iPhone 13+ per `docs/DEVICE_TESTING.md` and paste the JSON here; also confirm the sensor sign.** The Definition of Done (60 fps at High) can't be confirmed without it. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
 2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
 3. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
 4. Edge look is uniform and slightly jelly-like: the same glossy rim everywhere. Needs variation, e.g. dark refraction band just inside the edge (backplate magnified/inverted), rim strength tied to curvature, sharper and rarer speculars. M10 candidate.
@@ -149,7 +166,7 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 10. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
 11. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
 12. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
-13. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
+13. Per-frame buffer transfer still counts ~60–75 KB/frame of external-memory churn on the main thread (moved, not copied). Zero-message alternative: SharedArrayBuffer double buffer + Atomics.waitAsync when `crossOriginIsolated` (the dev server sends COOP/COEP; production hosting must too), keeping transfers as the fallback.
 14. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
 
-NEXT: M9 – hardening: WebGL context loss/restore (recreate all passes + targets, keep the sim running), pause on hidden tab (sim + render), thermal/long-session behaviour (simulated frame-time drift triggers the guard), memory/allocation audit of the frame loop, and a real-device test checklist + remote-debug instructions (device results recorded when available).
+NEXT: M10 – final realism pass: write a side-by-side critique of the current screenshots against macro reference photography of water in glass (calm, tilted, splash, pour), pick the 3 weakest visual problems, and fix them one by one with before/after screenshots.

@@ -2,16 +2,16 @@
   "checks": {
     "pour": {
       "fillsUp": true,
-      "fillVsPrefilledPct": 0.11,
+      "fillVsPrefilledPct": 0.08,
       "pass": true
     },
     "tap": {
-      "activityBefore": 0.027,
-      "activityAfter": 0.028,
-      "maxSpeedBefore": 1.178,
-      "maxSpeedAfter": 1.018,
-      "foamBefore": 0.0007,
-      "foamAfter": 0.0245,
+      "activityBefore": 0.035,
+      "activityAfter": 0.061,
+      "maxSpeedBefore": 1.188,
+      "maxSpeedAfter": 1.188,
+      "foamBefore": 0.0008,
+      "foamAfter": 0.0256,
       "pass": true
     },
     "reset": {
@@ -22,28 +22,28 @@
         [
           "pointerdown",
           3,
-          432446
+          440605
         ],
         [
           "pointerdown",
           4,
-          432446
+          440605
         ],
         [
           "pointerup",
           3,
-          432515
+          441259
         ],
         [
           "pointerup",
           4,
-          432515
+          441259
         ]
       ],
       "pass": true
     }
   },
-  "referenceFill": 6621.5,
+  "referenceFill": 6615.3,
   "pour": {
     "samples": [
       {
@@ -51,60 +51,60 @@
         "capacity": 21684,
         "pourRemaining": 17716,
         "outside": 0,
-        "fill": 1086.7,
+        "fill": 1085.1,
         "activity": 0.796,
         "maxSpeed": 1.188,
-        "meanFoam": 0.242,
-        "bubbles": 10,
-        "stepMs": 25.69,
+        "meanFoam": 0.2422,
+        "bubbles": 15,
+        "stepMs": 26.71,
         "simTime": 0.27,
-        "frameAvg": 71.6,
-        "frameMax": 250
+        "frameAvg": 74.2,
+        "frameMax": 300
       },
       {
         "particles": 11904,
         "capacity": 21684,
         "pourRemaining": 9780,
         "outside": 0,
-        "fill": 3424.9,
-        "activity": 0.489,
+        "fill": 3444.8,
+        "activity": 0.491,
         "maxSpeed": 1.188,
-        "meanFoam": 0.2319,
-        "bubbles": 30,
-        "stepMs": 22.06,
+        "meanFoam": 0.231,
+        "bubbles": 32,
+        "stepMs": 24.78,
         "simTime": 0.8,
-        "frameAvg": 184.6,
-        "frameMax": 1583.3
+        "frameAvg": 183.6,
+        "frameMax": 1216.6
       },
       {
-        "particles": 17360,
+        "particles": 17856,
         "capacity": 21684,
-        "pourRemaining": 4324,
+        "pourRemaining": 3828,
         "outside": 0,
-        "fill": 5034.8,
-        "activity": 0.445,
+        "fill": 5175.6,
+        "activity": 0.439,
         "maxSpeed": 1.188,
-        "meanFoam": 0.165,
-        "bubbles": 12,
-        "stepMs": 32.15,
-        "simTime": 1.17,
-        "frameAvg": 270.5,
-        "frameMax": 1583.3
+        "meanFoam": 0.1639,
+        "bubbles": 19,
+        "stepMs": 32.03,
+        "simTime": 1.2,
+        "frameAvg": 288.6,
+        "frameMax": 2066.6
       },
       {
         "particles": 21684,
         "capacity": 21684,
         "pourRemaining": 0,
         "outside": 0,
-        "fill": 6327.5,
-        "activity": 0.272,
-        "maxSpeed": 1.049,
-        "meanFoam": 0.1118,
-        "bubbles": 3,
-        "stepMs": 38.55,
-        "simTime": 1.63,
-        "frameAvg": 354.7,
-        "frameMax": 1933.3
+        "fill": 6284.5,
+        "activity": 0.281,
+        "maxSpeed": 1.053,
+        "meanFoam": 0.1193,
+        "bubbles": 9,
+        "stepMs": 35.86,
+        "simTime": 1.6,
+        "frameAvg": 364.9,
+        "frameMax": 2066.6
       }
     ],
     "settled": {
@@ -112,16 +112,16 @@
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6623.9,
-      "activity": 0.026,
-      "maxSpeed": 0.445,
-      "meanFoam": 0.0007,
+      "fill": 6637.1,
+      "activity": 0.019,
+      "maxSpeed": 0.253,
+      "meanFoam": 0.0006,
       "bubbles": 0,
-      "stepMs": 16.88,
+      "stepMs": 16.34,
       "simTime": 8,
-      "frameAvg": 119,
-      "frameMax": 433.3,
-      "fillAvg": 6628.7
+      "frameAvg": 120.4,
+      "frameMax": 400,
+      "fillAvg": 6620.5
     }
   },
   "poses": {
@@ -130,98 +130,98 @@
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6551,
-      "activity": 0.032,
-      "maxSpeed": 0.985,
-      "meanFoam": 0.0009,
-      "bubbles": 0,
-      "stepMs": 17.8,
-      "simTime": 12.4,
-      "frameAvg": 170.8,
-      "frameMax": 2116.6
+      "fill": 6525,
+      "activity": 0.065,
+      "maxSpeed": 0.727,
+      "meanFoam": 0.009,
+      "bubbles": 7,
+      "stepMs": 24.02,
+      "simTime": 12.3,
+      "frameAvg": 176.8,
+      "frameMax": 1833.3
     },
     "04-tilt-right": {
       "particles": 21684,
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6577.5,
-      "activity": 0.048,
-      "maxSpeed": 0.212,
-      "meanFoam": 0.0028,
+      "fill": 6576.5,
+      "activity": 0.039,
+      "maxSpeed": 0.208,
+      "meanFoam": 0.0038,
       "bubbles": 0,
-      "stepMs": 16.39,
-      "simTime": 14.93,
-      "frameAvg": 170.4,
-      "frameMax": 1983.3
+      "stepMs": 15.58,
+      "simTime": 14.77,
+      "frameAvg": 170.7,
+      "frameMax": 1449.9
     },
     "05-upside-down": {
       "particles": 21684,
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6552.4,
-      "activity": 0.051,
-      "maxSpeed": 0.772,
-      "meanFoam": 0.0151,
-      "bubbles": 1,
-      "stepMs": 18.1,
-      "simTime": 17.93,
-      "frameAvg": 168.5,
-      "frameMax": 1383.3
+      "fill": 6562,
+      "activity": 0.033,
+      "maxSpeed": 0.516,
+      "meanFoam": 0.0113,
+      "bubbles": 0,
+      "stepMs": 16.22,
+      "simTime": 17.7,
+      "frameAvg": 170.8,
+      "frameMax": 2449.9
     },
     "06-hard-shake": {
       "particles": 21684,
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6390.3,
-      "activity": 0.387,
-      "maxSpeed": 1.188,
-      "meanFoam": 0.1748,
-      "bubbles": 13,
-      "stepMs": 34.87,
-      "simTime": 20.47,
-      "frameAvg": 179.7,
-      "frameMax": 1616.6
+      "fill": 6476.6,
+      "activity": 0.206,
+      "maxSpeed": 0.948,
+      "meanFoam": 0.1418,
+      "bubbles": 23,
+      "stepMs": 31.4,
+      "simTime": 20.2,
+      "frameAvg": 192.2,
+      "frameMax": 1716.6
     },
     "07-resettled": {
       "particles": 21684,
       "capacity": 21684,
       "pourRemaining": 0,
       "outside": 0,
-      "fill": 6592.9,
-      "activity": 0.032,
-      "maxSpeed": 0.849,
-      "meanFoam": 0.0008,
-      "bubbles": 1,
-      "stepMs": 15.4,
-      "simTime": 26.93,
-      "frameAvg": 163.5,
-      "frameMax": 1566.6
+      "fill": 6594.8,
+      "activity": 0.028,
+      "maxSpeed": 0.518,
+      "meanFoam": 0.0007,
+      "bubbles": 0,
+      "stepMs": 19.04,
+      "simTime": 26.67,
+      "frameAvg": 171.5,
+      "frameMax": 1433.3
     }
   },
   "volume": {
     "neverOutside": true,
     "particlesConstant": true,
-    "fillStart": 6628.7,
-    "fillEnd": 6601.1,
-    "fillChangePct": -0.42
+    "fillStart": 6620.5,
+    "fillEnd": 6616.1,
+    "fillChangePct": -0.07
   },
   "frame": {
     "particles": 21684,
     "capacity": 21684,
     "pourRemaining": 0,
     "outside": 0,
-    "fill": 6621.9,
-    "activity": 0.033,
-    "maxSpeed": 0.75,
-    "meanFoam": 0.0007,
-    "bubbles": 0,
-    "stepMs": 16.29,
-    "simTime": 33.33,
-    "frameAvg": 697.2,
-    "frameMax": 1449.9
+    "fill": 6587.4,
+    "activity": 0.083,
+    "maxSpeed": 0.959,
+    "meanFoam": 0.0208,
+    "bubbles": 8,
+    "stepMs": 29.85,
+    "simTime": 32.9,
+    "frameAvg": 736.1,
+    "frameMax": 1816.6
   },
   "consoleErrors": [],
   "pass": true

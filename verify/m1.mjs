@@ -58,7 +58,7 @@ try {
   await page.waitForTimeout(3000);
   results.frame = await page.evaluate(() => {
     const s = window.__water.stats;
-    return { avgMs: s.frameAvg, maxMs: s.frameMax, cpuAvgMs: s.cpuAvg, simSteps: window.__water.clock.steps };
+    return { avgMs: s.frameAvg, maxMs: s.frameMax, cpuAvgMs: s.cpuAvg, simTime: window.__water.sim.stats ? window.__water.sim.stats.simTime : 0 };
   });
   results.volume = 'n/a (no water until M2)';
 

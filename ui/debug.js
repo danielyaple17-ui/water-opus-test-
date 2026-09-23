@@ -96,6 +96,27 @@ export class DebugOverlay {
     }
   }
 
+  // Benchmark report: shown in the overlay with a Copy button.
+  showReport(json) {
+    if (!this.reportEl) {
+      this.reportEl = document.createElement('div');
+      this.reportEl.className = 'report';
+      const btn = document.createElement('button');
+      btn.textContent = 'Copy benchmark';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (navigator.clipboard) navigator.clipboard.writeText(this.reportText).catch(() => {});
+        btn.textContent = 'Copied';
+      });
+      this.reportPre = document.createElement('pre');
+      this.reportEl.append(btn, this.reportPre);
+      this.el.append(this.reportEl);
+    }
+    this.reportText = json;
+    this.reportPre.textContent = json;
+    if (!this.visible) this.toggle();
+  }
+
   toggle() {
     this.visible = !this.visible;
     this.el.hidden = !this.visible;

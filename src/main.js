@@ -6,8 +6,10 @@ import { DebugOverlay } from '../ui/debug.js';
 import { Stage, tryLockPortrait } from '../ui/stage.js';
 import { Stats } from '../ui/stats.js';
 import { SimClient } from '../sim/client.js';
+import { HEADER } from '../sim/layout.js';
 import { QualityController, LEVELS } from './quality.js';
 import { TouchGestures } from '../ui/touch.js';
+import { Bench } from '../ui/bench.js';
 
 const $ = (id) => document.getElementById(id);
 const stageEl = $('stage');
@@ -72,9 +74,10 @@ function applyQuality(level) {
 const quality = new QualityController(applyQuality, { initial: forcedQ >= 0 ? forcedQ : 2, auto: forcedQ < 0 });
 
 const sim = new SimClient((data, count, bubbles) => {
-  renderer.particles.upload(data, count);
-  renderer.bubbles.upload(data, count * 4, bubbles);
   stats.particles = count;
+  if (renderer.lost) return; // nothing to upload into; the next frame after restore refills
+  renderer.particles.upload(data, count, HEADER);
+  renderer.bubbles.upload(data, HEADER + 4 * sim.count, bubbles);
 });
 debug.sim = sim;
 
@@ -88,6 +91,7 @@ function initSim() {
 }
 
 let last = 0;
+let bench = null; // ?bench=1: on-device benchmark (ui/bench.js)
 function frame(now) {
   requestAnimationFrame(frame);
   if (state.paused) { last = now; return; }
@@ -97,6 +101,7 @@ function frame(now) {
   const dt = frameMs * 0.001;
 
   motion.update(dt);
+  if (state.started && bench) bench.tick(dt);
   if (state.started) {
     sim.update(dt, motion);
     renderer.setGravity(motion.gx, motion.gy);
@@ -123,16 +128,38 @@ async function start() {
     startSub.textContent = 'Motion access denied — using touch & mouse';
   }
   initSim();
+  if (params.get('bench') === '1') {
+    bench = new Bench({ quality, sim, motion, overlay: debug, seconds: Number(params.get('benchSec')) || 8 });
+  }
   state.started = true;
   startEl.classList.add('hide');
 }
 startEl.addEventListener('click', start);
 
 // ---- lifecycle ----------------------------------------------------------
-document.addEventListener('visibilitychange', () => {
-  state.paused = document.hidden;
-  if (!state.paused) { sim.pendingDt = 0; stats.reset(); }
-});
+// Hidden tab / app switch / bfcache: stop simulating and drawing entirely (the
+// worker idles because no step requests arrive); on return, drop the elapsed
+// time so the water resumes where it was instead of fast-forwarding.
+function setPaused(p) {
+  if (state.paused === p) return;
+  state.paused = p;
+  if (!p) { sim.pendingDt = 0; last = 0; stats.reset(); }
+}
+document.addEventListener('visibilitychange', () => setPaused(document.hidden));
+window.addEventListener('pagehide', () => setPaused(true));
+window.addEventListener('pageshow', () => setPaused(document.hidden));
+
+// Lost WebGL context: keep simulating; if it isn't back within 5 s, offer a reload.
+let lostTimer = 0;
+renderer.onContextState = (st) => {
+  clearTimeout(lostTimer);
+  if (st === 'lost') lostTimer = setTimeout(() => renderer.onContextState('failed'), 5000);
+  else if (st === 'restored') $('fatal').hidden = true;
+  else if (st === 'failed' && renderer.lost !== false) {
+    fatal('Graphics were reset. Tap to reload.');
+    $('fatal').addEventListener('click', () => location.reload(), { once: true });
+  }
+};
 
 // Desktop testing: mouse input works before the start tap so tilting is visible.
 if (navigator.maxTouchPoints === 0) motion.attach();
@@ -142,6 +169,17 @@ requestAnimationFrame(frame);
 // Test / debugging hook (read-only use by verify scripts).
 applyQuality(quality.level);
 debug.quality = quality;
+
+// Battery saver (Battery Status API: Chrome/Android; iOS Safari doesn't expose
+// it, where the thermal guard in the quality controller is the only protection).
+if (navigator.getBattery) {
+  navigator.getBattery().then((b) => {
+    const check = () => quality.setPowerCap(b.level < 0.2 && !b.charging ? 1 : LEVELS.length - 1);
+    b.addEventListener('levelchange', check);
+    b.addEventListener('chargingchange', check);
+    check();
+  }).catch(() => {});
+}
 
 // Tap = splash ripple, two-finger tap (or R) = empty and pour again.
 new TouchGestures(stageEl, stage, {

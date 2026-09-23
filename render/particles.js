@@ -55,16 +55,18 @@ export class ParticlePass {
     this.capacity = 0;
   }
 
-  restore() { this._init(); }
+  restore() { this._init(); this.count = 0; } // old VBO contents are gone
 
-  upload(data, count) {
+  // data: the worker buffer view; particles start at float `offset`.
+  upload(data, count, offset = 0) {
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
     if (count > this.capacity) {
-      gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW);
-      this.capacity = count;
+      // Grow geometrically: during the pour-in the count rises every frame.
+      this.capacity = Math.max(1024, count * 2);
+      gl.bufferData(gl.ARRAY_BUFFER, this.capacity * 16, gl.DYNAMIC_DRAW);
     }
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, count * 4);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, offset, count * 4);
     this.count = count;
   }
 

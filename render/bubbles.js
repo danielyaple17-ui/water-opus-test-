@@ -65,7 +65,7 @@ export class BubblePass {
     gl.bindVertexArray(null);
   }
 
-  restore() { this._init(); }
+  restore() { this._init(); this.count = 0; }
 
   // data: the worker's Float32Array; bubbles start at float offset `offset`.
   upload(data, offset, count) {

@@ -1,0 +1,14 @@
+{
+  "water-off-low": {
+    "frames": 590,
+    "fps": 59,
+    "bytesPerFrame": 63672,
+    "heapDrops": 322
+  },
+  "full-render-low": {
+    "frames": 187,
+    "fps": 18.7,
+    "bytesPerFrame": 58273,
+    "heapDrops": 93
+  }
+}

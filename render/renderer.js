@@ -71,10 +71,36 @@ export class Renderer {
       particles: false,
     };
     this.up = [0, 1]; // real-world up in GL screen space (from gravity)
+    // Context loss (GPU reset, backgrounded tab on iOS, driver update …): stop
+    // drawing, keep the sim running; on restore every GL object is rebuilt
+    // (programs, VAOs/VBOs, textures, render targets). If the context never
+    // comes back, `onContextState('failed')` lets the UI offer a reload.
+    this.lostCount = 0;
+    this.restoredCount = 0;
+    this.onContextState = null;
     this.gl = createContext(
       canvas,
-      () => { this.lost = true; },
-      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); this.surface.restore(); this.bubbles.restore(); this.post.restore(); },
+      () => {
+        this.lost = true;
+        this.lostCount++;
+        if (this.onContextState) this.onContextState('lost');
+      },
+      () => {
+        try {
+          this._init();
+          this.bpDirty = true;
+          this.particles.restore();
+          this.surface.restore();
+          this.bubbles.restore();
+          this.post.restore();
+          this.lost = false;
+          this.restoredCount++;
+          if (this.onContextState) this.onContextState('restored');
+        } catch (err) {
+          console.error('WebGL restore failed', err);
+          if (this.onContextState) this.onContextState('failed');
+        }
+      },
     );
     if (!this.gl) throw new Error('WebGL2 is not available on this device.');
     this._init();

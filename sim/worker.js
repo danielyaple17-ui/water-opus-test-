@@ -3,22 +3,23 @@
 // whole fixed steps and returns the buffer filled with particle state
 // (x, y normalised to the tank interior [0,1], foam 0..1, speed m/s), followed
 // by MAX_BUBBLES × (x, y, radius as fraction of tank width, alpha), transferred
-// back zero-copy. The same ArrayBuffers ping-pong forever: no per-frame allocation
-// of particle data.
+// back zero-copy. The same ArrayBuffers ping-pong forever and the per-frame
+// inputs/stats live in the buffer header (sim/layout.js), so no message objects
+// are cloned per frame.
 
 import { FlipSim, FLUID } from './flip.js';
 import { FixedStep } from './fixed-step.js';
 import { Bubbles, MAX_BUBBLES } from './bubbles.js';
+import * as LY from './layout.js';
 
 let sim = null;
 let bubbles = null;
 const clock = new FixedStep(120, 4);
 const input = { gx: 0, gy: 9.81, ax: 0, ay: 0, spin: 0, alpha: 0, prevSpin: 0 };
+let gen = 0; // bumps on init/resample so the host can drop stale buffers
 const stats = {
-  type: 'frame', buf: null, count: 0,
-  steps: 0, stepMs: 0, stepMsMax: 0, substeps: 1,
-  fluidCells: 0, fillVolume: 0, outside: 0, comX: 0.5, comY: 0.5, angMom: 0,
-  bubbles: 0, activity: 0, foamSum: 0, maxSpeed: 0, simTime: 0,
+  steps: 0, stepMs: 0, stepMsMax: 0, simTime: 0,
+  outside: 0, comX: 0.5, comY: 0.5, angMom: 0, activity: 0, foamSum: 0,
 };
 
 function stepOnce(dt) {
@@ -42,14 +43,15 @@ function writeOut(out) {
     sx += x; sy += y;
     // Angular momentum about the tank centre, + = clockwise on screen (y down).
     L += (x - cx) * vel[2 * i + 1] - (y - cy) * vel[2 * i];
-    out[4 * i] = (x - h) * invW;
-    out[4 * i + 1] = (y - h) * invH;
+    const o = LY.HEADER + 4 * i;
+    out[o] = (x - h) * invW;
+    out[o + 1] = (y - h) * invH;
     const vx = vel[2 * i], vy = vel[2 * i + 1];
     const sp2 = vx * vx + vy * vy;
     e += sp2;
     fs += foam[i];
-    out[4 * i + 2] = foam[i];
-    out[4 * i + 3] = Math.sqrt(sp2);
+    out[o + 2] = foam[i];
+    out[o + 3] = Math.sqrt(sp2);
   }
   stats.outside = outside;
   const nn = n > 0 ? n : 1; // pour-in starts with no active particles
@@ -58,29 +60,47 @@ function writeOut(out) {
   stats.angMom = L / nn;
   stats.activity = Math.sqrt(e / nn);
   stats.foamSum = fs;
-  // Bubbles after the particles.
-  const base = 4 * n, invWm = 1 / ((sim.nx - 2) * h);
+  // Bubbles after the particles (payload is laid out for full capacity).
+  const base = 4 * sim.capacity, invWm = 1 / ((sim.nx - 2) * h);
   const nb = bubbles.count;
   for (let b = 0; b < nb; b++) {
-    const o = base + 4 * b;
+    const o = LY.HEADER + base + 4 * b;
     out[o] = (bubbles.x[b] - h) * invW;
     out[o + 1] = (bubbles.y[b] - h) * invH;
     out[o + 2] = bubbles.r[b] * invWm;
     const age = bubbles.age[b];
     out[o + 3] = Math.min(1, age / 0.15);
   }
-  stats.bubbles = nb;
-  stats.pourRemaining = sim.pourRemaining;
-  stats.maxSpeed = sim.maxSpeed;
+  // Header: stats for the host.
+  out[LY.S_COUNT] = n;
+  out[LY.S_BUBBLES] = nb;
+  out[LY.S_SIMTIME] = stats.simTime;
+  out[LY.S_STEPMS] = stats.stepMs;
+  out[LY.S_STEPMSMAX] = stats.stepMsMax;
+  out[LY.S_SUBSTEPS] = sim.substeps;
+  out[LY.S_FLUID] = sim.fluidCells;
+  out[LY.S_FILL] = sim.fillVolume;
+  out[LY.S_OUTSIDE] = outside;
+  out[LY.S_COMX] = stats.comX;
+  out[LY.S_COMY] = stats.comY;
+  out[LY.S_ANGMOM] = stats.angMom;
+  out[LY.S_ACTIVITY] = stats.activity;
+  out[LY.S_FOAMSUM] = fs;
+  out[LY.S_MAXSPEED] = sim.maxSpeed;
+  out[LY.S_POUR] = sim.pourRemaining;
+  out[LY.S_STEPS] = stats.steps;
+  out[LY.S_GEN] = gen;
 }
 
 self.onmessage = (e) => {
   const m = e.data;
+  if (m instanceof ArrayBuffer) { step(m); return; }
   if (m.type === 'init' || m.type === 'resample') {
     // 'resample' changes resolution (quality level) and keeps the water.
     sim = m.type === 'resample' && sim ? FlipSim.resampleFrom(sim, m.opts) : new FlipSim(m.opts);
     bubbles = new Bubbles(sim);
     clock.reset();
+    gen++;
     if (m.type === 'init') stats.simTime = 0;
     stats.stepMs = 0; stats.stepMsMax = 0;
     self.postMessage({
@@ -90,6 +110,7 @@ self.onmessage = (e) => {
       cellsX: sim.nx - 2,
       cellsY: sim.ny - 2,
       maxBubbles: MAX_BUBBLES,
+      gen,
     });
     return;
   }
@@ -114,32 +135,32 @@ self.onmessage = (e) => {
     if (found) sim.impulse(sx - ux * sim.h * 5, sy - uy * sim.h * 5, 0.009, 0.7);
     return;
   }
-  if (m.type === 'step') {
-    input.gx = m.gx; input.gy = m.gy; input.ax = m.ax; input.ay = m.ay; input.spin = m.spin;
-    // Angular acceleration for the Euler force, smoothed over ~50 ms.
-    if (m.dt > 0) {
-      const a = (m.spin - input.prevSpin) / m.dt;
-      input.alpha += (a - input.alpha) * (1 - Math.exp(-m.dt / 0.05));
-    }
-    input.prevSpin = m.spin;
-    const t0 = performance.now();
-    const n = clock.advance(m.dt, stepOnce);
-    const ms = performance.now() - t0;
-    if (n > 0) {
-      const per = ms / n;
-      stats.stepMs = stats.stepMs ? stats.stepMs * 0.9 + per * 0.1 : per;
-      if (per > stats.stepMsMax) stats.stepMsMax = per;
-    }
-    stats.steps = n;
-    stats.substeps = sim.substeps;
-    stats.fluidCells = sim.fluidCells;
-    stats.fillVolume = sim.fillVolume;
-    stats.maxSpeed = sim.maxSpeed;
-    const out = new Float32Array(m.buf);
-    writeOut(out);
-    stats.buf = m.buf;
-    stats.count = sim.numParticles;
-    self.postMessage(stats, [m.buf]);
-    stats.buf = null;
-  }
 };
+
+// One frame's worth of fixed steps; `buf` carries the inputs in, the state out.
+function step(buf) {
+  const io = new Float32Array(buf);
+  if (!sim || io.length !== LY.bufferFloats(sim.capacity, MAX_BUBBLES)) {
+    self.postMessage(buf, [buf]); // stale (pre-resample) buffer: hand it back untouched
+    return;
+  }
+  const dt = io[LY.I_DT], spin = io[LY.I_SPIN];
+  input.gx = io[LY.I_GX]; input.gy = io[LY.I_GY]; input.ax = io[LY.I_AX]; input.ay = io[LY.I_AY]; input.spin = spin;
+  // Angular acceleration for the Euler force, smoothed over ~50 ms.
+  if (dt > 0) {
+    const a = (spin - input.prevSpin) / dt;
+    input.alpha += (a - input.alpha) * (1 - Math.exp(-dt / 0.05));
+  }
+  input.prevSpin = spin;
+  const t0 = performance.now();
+  const n = clock.advance(dt, stepOnce);
+  const ms = performance.now() - t0;
+  if (n > 0) {
+    const per = ms / n;
+    stats.stepMs = stats.stepMs ? stats.stepMs * 0.9 + per * 0.1 : per;
+    if (per > stats.stepMsMax) stats.stepMsMax = per;
+  }
+  stats.steps = n;
+  writeOut(io);
+  self.postMessage(buf, [buf]);
+}
