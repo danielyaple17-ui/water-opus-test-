@@ -26,7 +26,7 @@ export class FlipSim {
       worldHeight, // interior tank height (m)
       cellsX, // interior cells across
       fill = 0.45, // fraction of the tank filled at rest
-      flipRatio = 0.9, // 0.95 let the drift correction sustain a boil at the floor (PROGRESS.md)
+      flipRatio, // default depends on resolution, see below
       pressureCycles = 3,
       separationIters = 2,
       density = 1000,
@@ -39,7 +39,12 @@ export class FlipSim {
     this.ny = Math.round(worldHeight / h) + 2;
     this.width = this.nx * h; // including walls
     this.height = this.ny * h;
-    this.flipRatio = flipRatio;
+    // Finer grids need a little more PIC and a wider drift band, or the drift
+    // correction sustains a boil at the floor (PROGRESS.md: floor boil,
+    // 104-cell noise): 0.9 / 0.04 up to 84 cells, ramping to 0.85 / 0.06 at 104.
+    const fineT = Math.min(1, Math.max(0, (cellsX - 84) / 20));
+    this.flipRatio = flipRatio ?? 0.9 - 0.05 * fineT;
+    this._driftBandDefault = 0.04 + 0.02 * fineT;
     this.pressureCycles = pressureCycles;
     this.pressureTol = 0.02; // stop V-cycles once max|r| ≤ 2% of max|rhs|
     this.separationIters = separationIters;
@@ -153,7 +158,7 @@ export class FlipSim {
     this.fast1 = 0;
     this.fast2 = 0;
     this.driftK = 0.1;
-    this.driftBand = 0.04; // 0.02 kept poured water boiling; 0.03 + FLIP 0.95 still boiled at the floor after a shake; 0.04 + FLIP 0.9 is calm and keeps volume
+    this.driftBand = this._driftBandDefault; // 0.02 kept poured water boiling; 0.03 + FLIP 0.95 still boiled at the floor after a shake; 0.04 + FLIP 0.9 is calm and keeps volume
     // Effective kinematic viscosity (m²/s). Far above water's 1e-6: in 2D the
     // thin wall boundary layers that damp real sloshing are unresolved, and an
     // inviscid 2D flow keeps its vortices forever. Clamped for explicit stability.

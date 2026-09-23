@@ -16,12 +16,12 @@
 // No allocation per frame: all state is numeric fields.
 
 export const LEVELS = [
-  // cells: 104 was tried for Ultra but that grid is noisy at rest (PROGRESS.md),
-  // so Ultra spends its extra budget on rendering instead.
+  // Ultra: 104 cells (≈33k particles). It was noisy at rest until the sim's
+  // FLIP ratio / drift band were made resolution-dependent (PROGRESS.md).
   { name: 'Low', cells: 48, renderScale: 0.5, blurPasses: 1, depthPasses: 2 },
   { name: 'Med', cells: 64, renderScale: 0.7, blurPasses: 2, depthPasses: 2 },
   { name: 'High', cells: 84, renderScale: 0.85, blurPasses: 2, depthPasses: 3 },
-  { name: 'Ultra', cells: 84, renderScale: 1.0, blurPasses: 3, depthPasses: 3 },
+  { name: 'Ultra', cells: 104, renderScale: 1.0, blurPasses: 3, depthPasses: 3 },
 ];
 
 const WINDOW = 2.0; // s
