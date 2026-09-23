@@ -7,14 +7,14 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M2: Basic particle water (CPU/worker), walls, gravity from tilt, drawn as plain dots
 - [x] M3: Sloshing from shakes + swirl from spinning, tuned so it feels physically right
 - [x] M4: Surface drawing (thickness, blur, normals) + refraction + Fresnel reflection
-- [ ] M5: Color that deepens with thickness, glow through thin water, highlights, waterline
+- [x] M5: Color that deepens with thickness, glow through thin water, highlights, waterline
 - [ ] M6: Foam, bubbles, caustics
 - [ ] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
 - [ ] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
 - [ ] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
 - [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M4)
+## Architecture (as of M5)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -40,11 +40,13 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   1. Thickness: Gaussian point splats (radius 4.4 r), additive into an R16F target at 0.5× canvas (RGBA8 fallback if float targets are unavailable), normalised by the analytic hex-lattice kernel sum so bulk ≈ 1. Particle domain [r, 1−r] is stretched onto the screen, and near-wall particles are also splatted mirrored across each wall (5 instances) so the water meets the glass.
   2. Bilateral blur: separable, σs = 5 texels, σr = 0.4, 2 H+V passes (`sigmaS`, `sigmaR`, `blurPasses`).
   3. Composite: **level-set edge**. The blurred field's 0.5 iso-line is the liquid boundary. Signed distance d = (T − 0.5)/|∇T| (T saturated at 1 so bulk density variation can't tilt normals) drives a crisp AA mask and a circular edge profile of width `rimCss` = 5 CSS px for the normal. Refraction of the backplate along n.xy × thickness with ±3% per-channel dispersion, Beer–Lambert transmittance, Schlick Fresnel (F0 0.02) reflection of a procedural studio (overhead softbox, side strips, key) that stays aligned to real-world up from gravity. Separate cheap blit when water is off.
+  4. (M5) Depth field: thickness → 4-tap downsample to 1/8 canvas (coverage, saturated at 1) → 3 passes of wide Gaussian (σ 6 texels ≈ 48 canvas px/pass). B ≈ 0.5 at the surface, → 1 deep in the bulk, < 0.5 in drops/tongues/sheets. It drives: Beer–Lambert transmittance of the refracted backplate over a path of 0.5–3.1 units (σa = 0.62/0.20/0.11, so deep water goes blue-green); in-scatter of the overhead light, aqua (0.009, 0.040, 0.046) just under the surface → dark teal (0.0008, 0.0075, 0.0125) deep, cut 65% in thin water so sheets stay clear; glow through thin water, brightest just inside the edge. Highlights: Blinn key glint (power 380, ×7), a waterline hairline ~0.9 CSS px inside the edge plus a silvery TIR band (0–9 px), strongest on edges whose outward normal faces world-up. Passes: `color`, `glow`, `highlights`.
+  - Shader hygiene (M5 bugs): GLSL `smoothstep(e0 > e1)` and `pow(negative, y)` are undefined (SwiftShader returned garbage, i.e. black specks in spray), and far-outside pixels overflowed exp(): inf·0 = NaN in mix. Fixed: ordered edges, explicit squares, clamp d ≥ 0, early-out when mask = 0.
 - `render/renderer.js` – backplate redesigned in M4 (out-of-focus softbox spill from above, dim warm bokeh glow, mottled frosted texture + grain) so refraction is readable. Passes: backplate, water, blur, refraction, reflection, particles.
 - `render/` – WebGL2 context (context-loss listeners), shader helpers with cached uniform locations, backplate baked once per resize into an SRGB8_ALPHA8 texture (future refraction source), linear→sRGB composite.
 - `ui/debug.js` – triple-tap any corner (or `D`): fps, frame avg/max, CPU ms, particles, quality, render px, input source/permission, gravity, tank accel, spin, gravity compass, per-pass toggles, sensor-sign toggle.
 - `ui/stats.js` – ring-buffer frame stats (no per-frame allocation).
-- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m4.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
+- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m5.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
 
 ## Measurements
 ### M1 (2026-09-22) – headless Chromium, SwiftShader (software GL), 390×844 @2x
@@ -85,10 +87,16 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Iterations: (1) thickness-as-height normals with light blur gave a wobbly "pencil line" surface; (2) heavy blur smoothed the shape but flattened the edge slope (no rim, fuzzy edge); (3) the level-set edge decouples shape smoothing from edge sharpness and fixed both; (4) saturating T before the gradient removed dashes along the walls.
 - Visual (honest, vs the macro-photo benchmark): now reads as *liquid*, with smooth, rounded, lens-rimmed tongues and drops, a crisp antialiased silhouette, and a softbox glint on edges facing world-up. **Not** photoreal yet: the body is a flat dark teal barely separated from the backplate, the rim is a thin grey line that breaks into dashes where the reflection misses the lights, the waterline shows a small stair-step ripple (~20 px) from particle-scale noise, and there's no depth colour, glow, foam or caustics (M5/M6).
 
+### M5 (2026-09-23) – headless Chromium + SwiftShader, 390×844 @2x, 84 cells
+- `node verify/m5.mjs` → pass, 0 console errors. Screenshots `verify/M5/`: poses 01–07, plus 09 no-colour, 10 no-glow, 11 no-highlights, 12 M4 look (all three off), 13 overlay.
+- Volume: 21,684 particles constant, 0 outside; grid fill settled 6635.0 → 6651.1 (**+0.24%**), worst transient 6.1% (mid-shake: spray cells count partially, recovers).
+- Frame time: SwiftShader 520–660 ms/frame (not representative, see M4). The extra GPU work is small: depth field at 1/8 res ≈ 49×106 texels × (4 + 6 passes × 21 taps) ≈ 0.7 M fetches, plus 1 extra texture fetch and ~40 ALU ops per composite pixel.
+- Visual (honest): biggest jump so far. The calm pose reads as a lit tank of water: a bright meniscus hairline over a silvery band, aqua just below the surface deepening to dark teal, and a clear surface-to-depth gradient that follows world-up (correct when inverted). Splashes read as liquid: rounded rim-lit tongues, an air pocket inside a curling crest, clearer thin sheets. Against the macro-photo benchmark it still looks CG: (a) every edge gets the same glossy, slightly *jelly-like* rim, where real water edges vary (sharp dark refraction lines, blown-out specular, thin bright lines); (b) the interior is smooth and flat with no internal light structure (caustics, M6); (c) the waterline still shows the small stair-step ripple; (d) no bubbles/foam in the splash (M6).
+
 ## Known Issues (priority order)
 1. **Sim step cost ≈ 11–15 ms on this VM (budget 8.3 ms/step at 120 Hz, one worker core).** Needs a real-device measurement; M7 owns the fix (GPU port or worker optimisation + quality levels picking cellsX/particle count from measured step time). Cheap wins already identified: separation every other step, 2 V-cycles when calm, SIMD-friendly SoA loops.
 2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
-3. Rim/meniscus is a thin dashed grey line (reflection only catches lights on part of the edge). M5 "bright edge line along the waterline" should replace it with a proper meniscus highlight.
+3. Edge look is uniform and slightly jelly-like: the same glossy rim everywhere. Needs variation, e.g. dark refraction band just inside the edge (backplate magnified/inverted), rim strength tied to curvature, sharper and rarer speculars. M10 candidate.
 4. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
 5. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
 6. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
@@ -99,4 +107,4 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 11. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
 12. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
 
-NEXT: M5 – water colour: thickness/depth-based blue-green absorption + in-scatter, faint glow through thin sheets and crests, bright specular highlights, and a proper bright waterline/meniscus line (fixes Known Issue 2c); verify poses + pass toggles + volume.
+NEXT: M6 – foam (turbulence/impact-driven per-particle foam value that decays), rising bubbles (spawned in turbulent water, rise against gravity, pop at the surface), and animated caustics on the back wall driven by the surface shape; verify poses + shake sequence + volume.

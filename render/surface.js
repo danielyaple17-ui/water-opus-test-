@@ -95,6 +95,11 @@ uniform float uUseReflect;
 uniform float uTScale;     // 1 for float targets, 4 for the RGBA8 fallback
 uniform float uPxPerTexel; // canvas px per thickness texel
 uniform float uRim;        // rounded edge width (canvas px)
+uniform sampler2D uDepth;  // blurred coverage (depth / thinness proxy)
+uniform float uDpr;
+uniform float uUseColor;
+uniform float uUseGlow;
+uniform float uUseHighlights;
 
 vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -151,6 +156,9 @@ void main() {
   float Tc = clamp(T, 0.0, 1.4);
   // Crisp, antialiased silhouette at the iso-line.
   float mask = smoothstep(-0.75, 0.75, d);
+  // Outside the liquid (faint spray below the iso-level) there is nothing to shade.
+  // (Also keeps far-negative d from overflowing exp() below: inf·0 = NaN in mix.)
+  if (mask <= 0.0) { outColor = vec4(toSrgb(bg), 1.0); return; }
 
   // Refraction: shift the backplate lookup along the surface slope, scaled by
   // thickness; tiny per-channel spread gives dispersion at strong edges.
@@ -161,12 +169,29 @@ void main() {
     refr.g = texture(uBack, vUv + off).g;
     refr.b = texture(uBack, vUv + off * 1.03).b;
   }
-  // Beer–Lambert through the (pseudo) water depth: red absorbed first.
-  vec3 sigma = vec3(0.55, 0.16, 0.08);
-  vec3 trans = exp(-sigma * Tc * 1.6);
-  // A little in-scattered ambient so thick water isn't just darker backplate.
-  vec3 scatter = vec3(0.006, 0.020, 0.028) * (1.0 - trans);
+  // --- M5 water colour -------------------------------------------------------
+  // B: heavily blurred liquid coverage (1/8 res). ≈0.5 at the surface, → 1 deep
+  // in the bulk, < 0.5 for drops, tongues and thin sheets. It is the smooth
+  // "how far below the surface / how thick" proxy the level set can't give.
+  float B = texture(uDepth, vUv).r;
+  float depthF = uUseColor > 0.5 ? smoothstep(0.52, 0.985, B) : 0.5;
+  float thin = 1.0 - smoothstep(0.30, 0.72, B);
+  float dcss = max(d, 0.0) / uDpr;
+
+  // Transmission of the backplate: longer optical path the deeper we look,
+  // red absorbed first (Beer–Lambert), so deep water turns blue-green.
+  vec3 sigmaA = vec3(0.62, 0.20, 0.11);
+  vec3 trans = exp(-sigmaA * (0.5 + 2.6 * depthF));
+  // In-scatter of the overhead studio light: bright aqua just under the
+  // surface, fading to a dark teal-blue in the depths.
+  vec3 shallow = vec3(0.009, 0.040, 0.046);
+  vec3 deep = vec3(0.0008, 0.0075, 0.0125);
+  // Thin water has little volume to scatter from: keep it clear, not opaque teal.
+  vec3 scatter = mix(shallow, deep, depthF) * (1.0 - 0.65 * thin);
   vec3 body = refr * trans + scatter;
+  // Faint glow where light passes through thin water (drops, crests, sheets).
+  // Brightest right inside the edge of thin water, where light is funnelled through.
+  if (uUseGlow > 0.5) body += vec3(0.018, 0.060, 0.058) * thin * (0.3 + 0.7 * exp(-dcss / 10.0));
 
   // Fresnel (Schlick, water F0 = 0.02) and reflection of the studio.
   float cosT = clamp(n.z, 0.0, 1.0);
@@ -174,10 +199,44 @@ void main() {
   vec3 refl = uUseReflect > 0.5 ? studio(reflect(vec3(0.0, 0.0, -1.0), n)) : vec3(0.0);
   vec3 water = body * (1.0 - F) + refl * F;
 
+  if (uUseHighlights > 0.5) {
+    vec2 side2 = vec2(uUp.y, -uUp.x);
+    // Sharp specular glints from the key light (upper-left, in front).
+    vec3 L = normalize(vec3(-0.35 * side2 + 0.62 * uUp, 0.70));
+    vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+    water += vec3(1.0, 0.97, 0.92) * 7.0 * pow(max(dot(n, H), 0.0), 380.0);
+    // Waterline: the meniscus seen edge-on is a bright hairline just inside the
+    // edge, over a silvery band where the underside of the surface totally
+    // internally reflects. Strongest on edges facing world-up (the free surface).
+    float facing = smoothstep(0.15, 0.85, dot(outward, uUp));
+    float edgeW = 0.35 + 0.65 * facing;
+    float lz = (dcss - 0.9) / 0.65; // (pow() is undefined for negative bases in GLSL)
+    float line = exp(-lz * lz);
+    float tir = (1.0 - smoothstep(1.0, 9.0, dcss)) * step(0.0, dcss);
+    water += vec3(0.85, 0.93, 0.95) * line * 0.55 * edgeW;
+    water += vec3(0.10, 0.14, 0.15) * tir * facing;
+  }
+
   vec3 col = mix(bg, water, mask);
   // Until M8's tone mapper: soft shoulder so highlights don't clip hard.
   col = col / (1.0 + max(col - 0.6, 0.0));
   outColor = vec4(toSrgb(col), 1.0);
+}`;
+
+// 4-tap box downsample of the thickness field, saturated to liquid coverage [0,1].
+const DOWN_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outT;
+uniform sampler2D uSrc;
+uniform vec2 uSrcTexel;
+uniform float uTScale;
+void main() {
+  float a = min(texture(uSrc, vUv + uSrcTexel * vec2(-1.0, -1.0)).r * uTScale, 1.0);
+  float b = min(texture(uSrc, vUv + uSrcTexel * vec2( 1.0, -1.0)).r * uTScale, 1.0);
+  float c = min(texture(uSrc, vUv + uSrcTexel * vec2(-1.0,  1.0)).r * uTScale, 1.0);
+  float d = min(texture(uSrc, vUv + uSrcTexel * vec2( 1.0,  1.0)).r * uTScale, 1.0);
+  outT = vec4(0.25 * (a + b + c + d), 0.0, 0.0, 1.0);
 }`;
 
 const BLIT_FS = `#version 300 es
@@ -218,6 +277,8 @@ export class SurfacePass {
     this.sigmaS = 5.0;
     this.rimCss = 5; // meniscus/edge rounding width in CSS px
     this.dpr = 1;
+    this.depthSigma = 6; // texels at 1/8 canvas res
+    this.depthPasses = 3;
     this.targets = null;
     this._init();
   }
@@ -231,6 +292,8 @@ export class SurfacePass {
     this.blur = program(gl, FULLSCREEN_VS, BLUR_FS, 'blur');
     this.comp = program(gl, FULLSCREEN_VS, COMPOSITE_FS, 'water');
     this.blit = program(gl, FULLSCREEN_VS, BLIT_FS, 'blit');
+    this.down = program(gl, FULLSCREEN_VS, DOWN_FS, 'down');
+    this.depthTargets = null;
     this.targets = null;
   }
 
@@ -249,6 +312,10 @@ export class SurfacePass {
       this.fmt = { internal: gl.RGBA8, float: false };
       this.targets = [makeTarget(gl, w, h, this.fmt), makeTarget(gl, w, h, this.fmt)];
     }
+    // Depth/thinness field at 1/4 of the thickness resolution.
+    if (this.depthTargets) for (const t of this.depthTargets) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    const dw = Math.max(1, Math.round(w / 4)), dh = Math.max(1, Math.round(h / 4));
+    this.depthTargets = [makeTarget(gl, dw, dh, this.fmt), makeTarget(gl, dw, dh, this.fmt)];
   }
 
   // particles: ParticlePass (owns the VBO); fsVao: empty VAO for fullscreen draws.
@@ -302,6 +369,31 @@ export class SurfacePass {
         gl.uniform2f(b.u.uDir, 0, 1 / A.h);
         drawFullscreen(gl);
       }
+
+      // 2b. Depth field: downsample coverage ×4, then wide Gaussian blur
+      // (the bilateral shader with a huge range sigma is a plain Gaussian).
+      const [C, D] = this.depthTargets;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, C.fbo);
+      gl.viewport(0, 0, C.w, C.h);
+      gl.useProgram(this.down.p);
+      gl.bindTexture(gl.TEXTURE_2D, A.tex);
+      gl.uniform1i(this.down.u.uSrc, 0);
+      gl.uniform2f(this.down.u.uSrcTexel, 1 / A.w, 1 / A.h);
+      gl.uniform1f(this.down.u.uTScale, this.fmt.float ? 1 : 4);
+      drawFullscreen(gl);
+      gl.useProgram(b.p);
+      gl.uniform1f(b.u.uSigmaR, 1e4);
+      gl.uniform1f(b.u.uSigmaS, this.depthSigma);
+      for (let i = 0; i < this.depthPasses; i++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, D.fbo);
+        gl.bindTexture(gl.TEXTURE_2D, C.tex);
+        gl.uniform2f(b.u.uDir, 1 / C.w, 0);
+        drawFullscreen(gl);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, C.fbo);
+        gl.bindTexture(gl.TEXTURE_2D, D.tex);
+        gl.uniform2f(b.u.uDir, 0, 1 / C.h);
+        drawFullscreen(gl);
+      }
     }
 
     // 3. Composite to the canvas.
@@ -324,6 +416,9 @@ export class SurfacePass {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, A.tex);
     gl.uniform1i(c.u.uThick, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.depthTargets[0].tex);
+    gl.uniform1i(c.u.uDepth, 2);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform2f(c.u.uTexel, 1 / A.w, 1 / A.h);
     gl.uniform2f(c.u.uUp, up[0], up[1]);
@@ -336,6 +431,10 @@ export class SurfacePass {
     gl.uniform1f(c.u.uWater, water ? 1 : 0);
     gl.uniform1f(c.u.uUseRefract, passes.refraction ? 1 : 0);
     gl.uniform1f(c.u.uUseReflect, passes.reflection ? 1 : 0);
+    gl.uniform1f(c.u.uUseColor, passes.color ? 1 : 0);
+    gl.uniform1f(c.u.uUseGlow, passes.glow ? 1 : 0);
+    gl.uniform1f(c.u.uUseHighlights, passes.highlights ? 1 : 0);
+    gl.uniform1f(c.u.uDpr, this.dpr);
     drawFullscreen(gl);
   }
 }

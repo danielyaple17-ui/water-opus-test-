@@ -1,0 +1,131 @@
+{
+  "phases": {
+    "01-settled": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6910,
+      "fillVolume": 6635,
+      "stepMs": 24.68,
+      "stepMsMax": 85.36,
+      "substeps": 2,
+      "simTime": 3.17,
+      "frameAvg": 117.9,
+      "frameMax": 1066.6,
+      "cpuAvg": 0.08,
+      "wallSec": 9.8
+    },
+    "02-tilt-left": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6864,
+      "fillVolume": 6613.8,
+      "stepMs": 21.81,
+      "stepMsMax": 85.36,
+      "substeps": 1,
+      "simTime": 5.77,
+      "frameAvg": 125.3,
+      "frameMax": 1999.9,
+      "cpuAvg": 0.09,
+      "wallSec": 15.2
+    },
+    "03-tilt-right": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6843,
+      "fillVolume": 6604.7,
+      "stepMs": 24.93,
+      "stepMsMax": 85.36,
+      "substeps": 1,
+      "simTime": 8.37,
+      "frameAvg": 130.7,
+      "frameMax": 1449.9,
+      "cpuAvg": 0.09,
+      "wallSec": 14.6
+    },
+    "04-upside-down": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6944,
+      "fillVolume": 6642.5,
+      "stepMs": 24.18,
+      "stepMsMax": 85.36,
+      "substeps": 1,
+      "simTime": 11.47,
+      "frameAvg": 119.3,
+      "frameMax": 1583.3,
+      "cpuAvg": 0.08,
+      "wallSec": 16.7
+    },
+    "05-upright-again": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6986,
+      "fillVolume": 6639.2,
+      "stepMs": 24.55,
+      "stepMsMax": 85.36,
+      "substeps": 1,
+      "simTime": 14.63,
+      "frameAvg": 136,
+      "frameMax": 1599.9,
+      "cpuAvg": 0.07,
+      "wallSec": 17.5
+    },
+    "06-hard-shake": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6992,
+      "fillVolume": 6229.4,
+      "stepMs": 34.28,
+      "stepMsMax": 85.36,
+      "substeps": 3,
+      "simTime": 17.2,
+      "frameAvg": 123.5,
+      "frameMax": 1199.9,
+      "cpuAvg": 0.07,
+      "wallSec": 17.1
+    },
+    "07-resettled": {
+      "particles": 21684,
+      "outside": 0,
+      "fluidCells": 6976,
+      "fillVolume": 6651.1,
+      "stepMs": 19.38,
+      "stepMsMax": 85.36,
+      "substeps": 1,
+      "simTime": 23.83,
+      "frameAvg": 127.5,
+      "frameMax": 1883.3,
+      "cpuAvg": 0.1,
+      "wallSec": 28.9
+    }
+  },
+  "surfaceFrame": {
+    "avgMs": 521.6,
+    "maxMs": 1483.3
+  },
+  "noSurfaceFrame": {
+    "avgMs": 662.5,
+    "maxMs": 1533.3
+  },
+  "renderTarget": {
+    "float": true,
+    "size": [
+      390,
+      844
+    ],
+    "blurPasses": 2
+  },
+  "volume": {
+    "particlesConstant": true,
+    "neverOutside": true,
+    "fluidCellsSettledStart": 6910,
+    "fluidCellsSettledEnd": 6976,
+    "fluidCellsChangePct": 0.96,
+    "fillSettledStart": 6635,
+    "fillSettledEnd": 6651.1,
+    "fillChangePct": 0.24,
+    "fillMaxDeviationPct": 6.11
+  },
+  "consoleErrors": [],
+  "pass": true
+}

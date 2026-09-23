@@ -62,7 +62,10 @@ export class Renderer {
     this.width = 1;
     this.height = 1;
     // Render-pass switches (debug overlay toggles these).
-    this.passes = { backplate: true, water: true, blur: true, refraction: true, reflection: true, particles: false };
+    this.passes = {
+      backplate: true, water: true, blur: true, refraction: true, reflection: true,
+      color: true, glow: true, highlights: true, particles: false,
+    };
     this.up = [0, 1]; // real-world up in GL screen space (from gravity)
     this.gl = createContext(
       canvas,
