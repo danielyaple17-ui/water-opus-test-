@@ -422,6 +422,15 @@ void main() {
       // The bubbles themselves are sprites riding on the particles (render/foam.js).
       float lit = 0.6 + 0.4 * (1.0 - depthF);          // lit from above
       water = mix(water, vec3(0.60, 0.66, 0.68) * lit * 0.5, fm * (0.10 + 0.30 * fv));
+      // Whitewater: only where foam is very dense (violent impacts, a plunging
+      // crest) does aerated water turn opaque white. Mottled so it reads as a
+      // mass of packed bubbles rather than paint; it decays with the foam.
+      float ww = smoothstep(0.22, 0.45, fv);
+      if (ww > 0.0) {
+        vec2 pw = vUv * uCanvas / uDpr / 5.0;
+        float mott = 0.75 + 0.25 * sin(pw.x * 1.7 + 1.3 * sin(pw.y * 1.1)) * sin(pw.y * 1.9 + uTime * 0.7);
+        water = mix(water, vec3(0.78, 0.84, 0.86) * lit * mott, ww * 0.75);
+      }
     }
   }
 

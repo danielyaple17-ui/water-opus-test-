@@ -23,7 +23,7 @@ void main() {
   float foam = fract(aParticle.z);
   // Presence: seed rank below the foam level → this particle shows a bubble.
   float rank = h1(seed + 0.5);
-  float on = smoothstep(rank * 0.7 + 0.25, rank * 0.7 + 0.38, foam);
+  float on = smoothstep(rank * 0.6 + 0.25, rank * 0.6 + 0.38, foam);
   if (on <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vA = 0.0; vR = 0.0; vSeed = 0.0; return; }
   vec2 p = (aParticle.xy - uRadiusN) / (1.0 - 2.0 * uRadiusN);
   // Spray outside the liquid surface is drawn by the surface pass (as drops) or
@@ -38,6 +38,8 @@ void main() {
   // Mostly small bubbles, a few larger ones (CSS px radius 1.3 .. 3.8).
   float sz = h1(seed + 5.3);
   vR = (1.3 + 2.5 * sz * sz * sz) * uDpr;
+  // Dense foam: bubbles crowd and grow, so the whitewater mass has texture.
+  vR *= 1.0 + 0.6 * smoothstep(0.6, 0.95, foam);
   on *= 0.55 + 0.45 * sz; // the smallest are the faintest
   gl_PointSize = 2.0 * vR + 2.0;
   vA = on;

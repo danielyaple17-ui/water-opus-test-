@@ -220,7 +220,7 @@ export class FlipSim {
       const ay = (vy - stepVel[2 * i + 1]) * inv;
       const a = Math.sqrt(ax * ax + ay * ay);
       impact[i] = a;
-      let gen = (a - thresh) / 220;
+      let gen = (a - thresh) / 140; // 220 m/s² → 1 was too weak for whitewater at hard impacts
       // Fast spray in sparse air cells turns white.
       const c = Math.floor(pos[2 * i] * invH) * ny + Math.floor(pos[2 * i + 1] * invH);
       if (rest > 0 && particleDensity[c] < 0.35 * rest && vx * vx + vy * vy > 0.09) gen = gen > 0.4 ? gen : 0.4;
