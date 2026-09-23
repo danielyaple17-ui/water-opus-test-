@@ -441,13 +441,17 @@ void main() {
       // Whitewater: only where foam is very dense (violent impacts, a plunging
       // crest) does aerated water turn opaque white. Mottled so it reads as a
       // mass of packed bubbles rather than paint; it decays with the foam.
-      float ww = smoothstep(0.22, 0.45, fv);
+      // Ragged front: the threshold is jittered by noise (~8 CSS px), so the
+      // white/clear boundary breaks into bubbly lobes instead of a soft blob.
+      vec2 pw = vUv * uCanvas / uDpr / 12.0 + vec2(0.0, uTime * 0.15);
+      float n1 = vnoise(pw), n2 = vnoise(pw * 2.4 + 7.0);
+      float ww = smoothstep(0.22, 0.45, fv + 0.14 * (n1 + 0.5 * n2 - 0.75));
       if (ww > 0.0) {
-        // Non-periodic value noise (two octaves, ~12 and ~5 CSS px): a sin×sin
-        // mottle read as a woven checker pattern.
-        vec2 pw = vUv * uCanvas / uDpr / 12.0 + vec2(0.0, uTime * 0.15);
-        float mott = 0.62 + 0.26 * vnoise(pw) + 0.12 * vnoise(pw * 2.4 + 7.0);
-        water = mix(water, vec3(0.78, 0.84, 0.86) * lit * mott, ww * 0.75);
+        // Foam scatters light strongly: bright where lit from above near the
+        // surface, self-shadowed grey deeper in the churn. Noise adds clumps.
+        float shade = mix(1.05, 0.42, smoothstep(0.0, 0.8, depthF)) * (1.0 + 0.35 * exp(-dcss / 8.0));
+        float mott = 0.68 + 0.22 * n1 + 0.10 * n2;
+        water = mix(water, vec3(0.78, 0.84, 0.86) * shade * mott, ww * 0.78);
       }
     }
   }

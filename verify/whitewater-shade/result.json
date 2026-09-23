@@ -1,0 +1,103 @@
+{
+  "poses": {
+    "03-tilt-left": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6566.2,
+      "activity": 0.034,
+      "stepMs": 15.41,
+      "simTime": 10.37,
+      "frameAvg": 180.1,
+      "frameMax": 1483.3
+    },
+    "04-tilt-right": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6543.9,
+      "activity": 0.075,
+      "stepMs": 15.61,
+      "simTime": 12.37,
+      "frameAvg": 175.7,
+      "frameMax": 1816.6
+    },
+    "05-upside-down": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6442.8,
+      "activity": 0.133,
+      "stepMs": 19.5,
+      "simTime": 14.87,
+      "frameAvg": 177.9,
+      "frameMax": 1866.6
+    },
+    "06-hard-shake": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6233.2,
+      "activity": 0.387,
+      "stepMs": 34.87,
+      "simTime": 16.87,
+      "frameAvg": 185.5,
+      "frameMax": 1833.3
+    },
+    "06b-hard-shake-more": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6187.5,
+      "activity": 0.473,
+      "stepMs": 36.78,
+      "simTime": 17.6,
+      "frameAvg": 301.7,
+      "frameMax": 1849.9
+    },
+    "06c-after-0_5s": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6457.7,
+      "activity": 0.095,
+      "stepMs": 30.28,
+      "simTime": 18.1,
+      "frameAvg": 320.8,
+      "frameMax": 2566.6
+    },
+    "06d-after-1_5s": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6487.3,
+      "activity": 0.108,
+      "stepMs": 24.65,
+      "simTime": 19.1,
+      "frameAvg": 309.8,
+      "frameMax": 1883.3
+    },
+    "07-resettled": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6643,
+      "activity": 0.02,
+      "stepMs": 15.15,
+      "simTime": 25.1,
+      "frameAvg": 179.2,
+      "frameMax": 1583.3
+    }
+  },
+  "volume": {
+    "neverOutside": true,
+    "particlesConstant": true,
+    "fillStart": 6605.9,
+    "fillEnd": 6617.8,
+    "fillChangePct": 0.18
+  },
+  "frame": {
+    "particles": 21684,
+    "outside": 0,
+    "fill": 6610.3,
+    "activity": 0.024,
+    "stepMs": 15.58,
+    "simTime": 28.63,
+    "frameAvg": 189.8,
+    "frameMax": 633.3
+  },
+  "consoleErrors": [],
+  "pass": true
+}
