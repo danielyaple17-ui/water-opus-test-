@@ -67,7 +67,7 @@ export class Renderer {
     this.passes = {
       backplate: true, water: true, blur: true, refraction: true, reflection: true,
       color: true, glow: true, highlights: true, foam: true, caustics: true, bubbles: true,
-      bloom: true, tonemap: true, glass: true,
+      bloom: true, tonemap: true, glass: true, smoothSurface: true,
       particles: false,
     };
     this.up = [0, 1]; // real-world up in GL screen space (from gravity)

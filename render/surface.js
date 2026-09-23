@@ -83,6 +83,53 @@ void main() {
   outT = vec4(sum / wsum, 0.0, 1.0);
 }`;
 
+// Surface-tangent smoothing (M10). The bilateral blur leaves a stair-step
+// ripple (~20 CSS px) along the waterline from particle-scale surface noise;
+// real calm water has a perfectly smooth line. Near the liquid edge this pass
+// averages the field *along the surface tangent* (so the surface doesn't move,
+// its wiggles do), using a wide-stencil gradient for a noise-robust tangent,
+// and fades the smoothing out where that gradient turns quickly (small drops,
+// sharp crests keep their curvature).
+const TANGENT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outT;
+uniform sampler2D uSrc;
+uniform vec2 uTexel;
+uniform float uTScale;
+vec2 gradWide(vec2 uv) {
+  const float e = 6.0;
+  float l = min(texture(uSrc, uv - vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
+  float r = min(texture(uSrc, uv + vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
+  float d = min(texture(uSrc, uv - vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
+  float u = min(texture(uSrc, uv + vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
+  return vec2(r - l, u - d);
+}
+void main() {
+  vec4 c = texture(uSrc, vUv);
+  float T = c.r * uTScale;
+  if (T < 0.08 || T > 1.2) { outT = c; return; }   // only near the edge
+  vec2 g = gradWide(vUv);
+  float gl = length(g);
+  if (gl < 0.02) { outT = c; return; }
+  vec2 n = g / gl;
+  vec2 t = vec2(-n.y, n.x);
+  // Coherence of the surface direction ±10 texels along the tangent.
+  vec2 ga = gradWide(vUv + t * uTexel * 10.0), gb = gradWide(vUv - t * uTexel * 10.0);
+  float coh = 0.5 * (dot(normalize(ga + 1e-5), n) + dot(normalize(gb + 1e-5), n));
+  float k = smoothstep(0.80, 0.97, coh);
+  if (k <= 0.0) { outT = c; return; }
+  vec2 sum = c.rg, w = vec2(1.0);
+  float wsum = 1.0;
+  for (int i = 1; i <= 8; i++) {
+    float o = float(i) * 2.0;
+    float wi = exp(-o * o / (2.0 * 49.0));
+    sum += (texture(uSrc, vUv + t * uTexel * o).rg + texture(uSrc, vUv - t * uTexel * o).rg) * wi;
+    wsum += 2.0 * wi;
+  }
+  outT = vec4(mix(c.rg, sum / wsum, k), 0.0, 1.0);
+}`;
+
 const COMPOSITE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -145,8 +192,10 @@ vec2 hash2(vec2 p) {
 // Caustic network: animated Voronoi edges (F2 − F1 small) on a domain-warped
 // plane look like the bright focal lines on a pool floor. Division-free (the
 // classic iterated-sin caustic produced 0/0 NaNs here).
-float causticLayer(vec2 p, float t) {
-  p += 0.35 * vec2(sin(p.y * 1.3 + t), cos(p.x * 1.1 - t * 0.8));
+float causticLayer(vec2 p, float t, float w) {
+  // Two-octave warp bends the Voronoi edges into curved filaments.
+  p += 0.55 * vec2(sin(p.y * 0.9 + t), cos(p.x * 0.8 - t * 0.8));
+  p += 0.22 * vec2(sin(p.y * 2.3 - t * 1.3), cos(p.x * 2.1 + t * 1.1));
   vec2 ip = floor(p), fp = fract(p);
   float f1 = 8.0, f2 = 8.0;
   for (int y = -1; y <= 1; y++) {
@@ -157,11 +206,18 @@ float causticLayer(vec2 p, float t) {
       if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
     }
   }
-  float l = 1.0 - smoothstep(0.0, 0.22, f2 - f1);
+  float l = 1.0 - smoothstep(0.0, w, f2 - f1);
   return l * l;
 }
-float causticPattern(vec2 p, float t) {
-  return 0.65 * causticLayer(p, t) + 0.45 * causticLayer(p * 1.7 + 11.0, t * 1.3);
+// w: line width in cell units. Thin, bright lines just below the surface
+// (light in focus); wider, dimmer ones deeper down (defocused), so the
+// integrated light stays roughly constant.
+float causticPattern(vec2 p, float t, float w) {
+  float k = 0.12 / w;
+  // Patchy: real caustic webs are bright in some regions and nearly absent in
+  // others (where the surface above is locally flat).
+  float pa = 0.5 + 0.5 * sin(p.x * 0.45 + t * 0.4) * sin(p.y * 0.38 - t * 0.3 + 1.7);
+  return k * (0.3 + 1.1 * pa * pa) * (0.7 * causticLayer(p, t, w) + 0.35 * causticLayer(p * 1.9 + 11.0, t * 1.3, w * 1.3));
 }
 // Foam texture: clusters of small bubbles. Cellular noise where each cell is
 // a bubble: bright rounded cap near its centre, dark gaps between; each cell
@@ -279,9 +335,12 @@ void main() {
       float slope = gl2 > 1e-4 ? dot(gb / gl2, side2c) * smoothstep(0.0, 0.05, gl2) : 0.0;
       vec2 pcss = vUv * uCanvas / uDpr;
       float X = dot(pcss, side2c), Y = dot(pcss, uUp);
-      vec2 cp = vec2(X + slope * hS * 0.5, Y * 0.5 + hS * 0.35) / 18.0;
+      // Isotropic domain (a pool-floor web, not streaks); a weak coupling to
+      // the surface height makes the web drift as the surface rises and falls.
+      vec2 cp = vec2(X + slope * hS * 0.5, Y + 0.25 * hS) / 26.0;
       float act = clamp(uActivity / 0.12, 0.0, 1.0);
-      float cst = causticPattern(cp, uTime * (0.35 + 1.4 * act));
+      float w = mix(0.07, 0.30, smoothstep(0.0, 0.7 * maxH, hS));
+      float cst = causticPattern(cp, uTime * (0.35 + 1.4 * act), w);
       // Sharpest just below the surface, fading with depth and to 0 before the
       // march limit (no visible cut-off).
       float fade = exp(-hS / 90.0) * (1.0 - smoothstep(0.6 * maxH, maxH, hS)) * (0.4 + 0.6 * act);
@@ -311,7 +370,26 @@ void main() {
   vec3 body = refr * trans + scatter;
   // Faint glow where light passes through thin water (drops, crests, sheets).
   // Brightest right inside the edge of thin water, where light is funnelled through.
-  if (uUseGlow > 0.5) body += vec3(0.018, 0.060, 0.058) * thin * (0.3 + 0.7 * exp(-dcss / 10.0));
+  // Key-light direction in the screen plane and how much each edge faces it.
+  vec2 side2k = vec2(uUp.y, -uUp.x);
+  vec2 key2 = normalize(-0.35 * side2k + 0.62 * uUp);
+  float kf = dot(outward, key2);
+  float facing = smoothstep(0.15, 0.85, dot(outward, uUp)); // free surface vs drop sides / undersides
+  // A drop or tongue acts as a lens: the light is focused into a crescent just
+  // inside the edge *away* from the light, the rest of the thin water is only
+  // faintly lit (not a uniform glowing ribbon).
+  if (uUseGlow > 0.5) {
+    float cres = smoothstep(-0.1, -0.8, kf) * exp(-dcss / 6.0);
+    body += vec3(0.018, 0.060, 0.058) * thin * (0.25 + 0.35 * exp(-dcss / 10.0) + 2.2 * cres);
+  }
+  // Dark refraction band: near a steep silhouette the rays through the water
+  // are bent past the light sources, so a drop's rim reads as a dark outline
+  // (strongest on sides and undersides; the free surface has its TIR band instead).
+  {
+    float bz = max(dcss - 3.0, 0.0) / 3.5;
+    float band = exp(-bz * bz) * step(0.0, dcss);
+    body *= 1.0 - 0.55 * band * (1.0 - facing);
+  }
 
   // Fresnel (Schlick, water F0 = 0.02) and reflection of the studio.
   float cosT = clamp(n.z, 0.0, 1.0);
@@ -324,15 +402,16 @@ void main() {
     // Sharp specular glints from the key light (upper-left, in front).
     vec3 L = normalize(vec3(-0.35 * side2 + 0.62 * uUp, 0.70));
     vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
-    water += vec3(1.0, 0.97, 0.92) * 7.0 * pow(max(dot(n, H), 0.0), 380.0);
+    // Small and hot, so it survives tone mapping as a pin-point and blooms.
+    water += vec3(1.0, 0.97, 0.92) * 16.0 * pow(max(dot(n, H), 0.0), 900.0);
     // Waterline: the meniscus seen edge-on is a bright hairline just inside the
     // edge, over a silvery band where the underside of the surface totally
     // internally reflects. Strongest on edges facing world-up (the free surface).
-    float facing = smoothstep(0.15, 0.85, dot(outward, uUp));
-    float edgeW = 0.35 + 0.65 * facing;
+    // Free surface: full hairline. Drop edges: only the side facing the key light.
+    float edgeW = mix(0.08 + 0.6 * smoothstep(-0.1, 0.8, kf), 1.0, facing);
     float lz = (dcss - 0.9) / 0.65; // (pow() is undefined for negative bases in GLSL)
     float line = exp(-lz * lz);
-    float tir = (1.0 - smoothstep(1.0, 9.0, dcss)) * step(0.0, dcss);
+    float tir = (1.0 - smoothstep(1.0, 6.0, dcss)) * step(0.0, dcss);
     water += vec3(0.85, 0.93, 0.95) * line * 0.55 * edgeW;
     water += vec3(0.10, 0.14, 0.15) * tir * facing;
   }
@@ -435,6 +514,7 @@ export class SurfacePass {
     this.comp = program(gl, FULLSCREEN_VS, COMPOSITE_FS, 'water');
     this.blit = program(gl, FULLSCREEN_VS, BLIT_FS, 'blit');
     this.down = program(gl, FULLSCREEN_VS, DOWN_FS, 'down');
+    this.tangent = program(gl, FULLSCREEN_VS, TANGENT_FS, 'tangent');
     this.depthTargets = null;
     this.targets = null;
   }
@@ -466,6 +546,7 @@ export class SurfacePass {
     this._ensureTargets(canvasW, canvasH);
     const [A, B] = this.targets;
     const water = passes.water && particles.count > 0 && particles.radius > 0;
+    let thick = A; // final thickness target (A, or B after tangent smoothing)
 
     if (water) {
       // 1. Thickness splat.
@@ -512,13 +593,28 @@ export class SurfacePass {
         drawFullscreen(gl);
       }
 
+      // 2a. Surface-tangent smoothing A → B; B is the thickness from here on.
+      thick = A;
+      if (passes.smoothSurface) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, B.fbo);
+        gl.viewport(0, 0, B.w, B.h);
+        gl.useProgram(this.tangent.p);
+        gl.bindTexture(gl.TEXTURE_2D, A.tex);
+        gl.uniform1i(this.tangent.u.uSrc, 0);
+        gl.uniform2f(this.tangent.u.uTexel, 1 / A.w, 1 / A.h);
+        gl.uniform1f(this.tangent.u.uTScale, this.fmt.float ? 1 : 4);
+        drawFullscreen(gl);
+        thick = B;
+        gl.useProgram(b.p);
+      }
+
       // 2b. Depth field: downsample coverage ×4, then wide Gaussian blur
       // (the bilateral shader with a huge range sigma is a plain Gaussian).
       const [C, D] = this.depthTargets;
       gl.bindFramebuffer(gl.FRAMEBUFFER, C.fbo);
       gl.viewport(0, 0, C.w, C.h);
       gl.useProgram(this.down.p);
-      gl.bindTexture(gl.TEXTURE_2D, A.tex);
+      gl.bindTexture(gl.TEXTURE_2D, thick.tex);
       gl.uniform1i(this.down.u.uSrc, 0);
       gl.uniform2f(this.down.u.uSrcTexel, 1 / A.w, 1 / A.h);
       gl.uniform1f(this.down.u.uTScale, this.fmt.float ? 1 : 4);
@@ -556,7 +652,7 @@ export class SurfacePass {
     gl.bindTexture(gl.TEXTURE_2D, backTex);
     gl.uniform1i(c.u.uBack, 0);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, A.tex);
+    gl.bindTexture(gl.TEXTURE_2D, thick.tex);
     gl.uniform1i(c.u.uThick, 1);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.depthTargets[0].tex);
