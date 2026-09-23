@@ -1,0 +1,228 @@
+{
+  "checks": {
+    "pour": {
+      "fillsUp": true,
+      "fillVsPrefilledPct": 0.11,
+      "pass": true
+    },
+    "tap": {
+      "activityBefore": 0.027,
+      "activityAfter": 0.028,
+      "maxSpeedBefore": 1.178,
+      "maxSpeedAfter": 1.018,
+      "foamBefore": 0.0007,
+      "foamAfter": 0.0245,
+      "pass": true
+    },
+    "reset": {
+      "minActiveAfterGesture": 496,
+      "maxPourRemainingSeen": 21188,
+      "initCalls": 1,
+      "events": [
+        [
+          "pointerdown",
+          3,
+          432446
+        ],
+        [
+          "pointerdown",
+          4,
+          432446
+        ],
+        [
+          "pointerup",
+          3,
+          432515
+        ],
+        [
+          "pointerup",
+          4,
+          432515
+        ]
+      ],
+      "pass": true
+    }
+  },
+  "referenceFill": 6621.5,
+  "pour": {
+    "samples": [
+      {
+        "particles": 3968,
+        "capacity": 21684,
+        "pourRemaining": 17716,
+        "outside": 0,
+        "fill": 1086.7,
+        "activity": 0.796,
+        "maxSpeed": 1.188,
+        "meanFoam": 0.242,
+        "bubbles": 10,
+        "stepMs": 25.69,
+        "simTime": 0.27,
+        "frameAvg": 71.6,
+        "frameMax": 250
+      },
+      {
+        "particles": 11904,
+        "capacity": 21684,
+        "pourRemaining": 9780,
+        "outside": 0,
+        "fill": 3424.9,
+        "activity": 0.489,
+        "maxSpeed": 1.188,
+        "meanFoam": 0.2319,
+        "bubbles": 30,
+        "stepMs": 22.06,
+        "simTime": 0.8,
+        "frameAvg": 184.6,
+        "frameMax": 1583.3
+      },
+      {
+        "particles": 17360,
+        "capacity": 21684,
+        "pourRemaining": 4324,
+        "outside": 0,
+        "fill": 5034.8,
+        "activity": 0.445,
+        "maxSpeed": 1.188,
+        "meanFoam": 0.165,
+        "bubbles": 12,
+        "stepMs": 32.15,
+        "simTime": 1.17,
+        "frameAvg": 270.5,
+        "frameMax": 1583.3
+      },
+      {
+        "particles": 21684,
+        "capacity": 21684,
+        "pourRemaining": 0,
+        "outside": 0,
+        "fill": 6327.5,
+        "activity": 0.272,
+        "maxSpeed": 1.049,
+        "meanFoam": 0.1118,
+        "bubbles": 3,
+        "stepMs": 38.55,
+        "simTime": 1.63,
+        "frameAvg": 354.7,
+        "frameMax": 1933.3
+      }
+    ],
+    "settled": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6623.9,
+      "activity": 0.026,
+      "maxSpeed": 0.445,
+      "meanFoam": 0.0007,
+      "bubbles": 0,
+      "stepMs": 16.88,
+      "simTime": 8,
+      "frameAvg": 119,
+      "frameMax": 433.3,
+      "fillAvg": 6628.7
+    }
+  },
+  "poses": {
+    "03-tilt-left": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6551,
+      "activity": 0.032,
+      "maxSpeed": 0.985,
+      "meanFoam": 0.0009,
+      "bubbles": 0,
+      "stepMs": 17.8,
+      "simTime": 12.4,
+      "frameAvg": 170.8,
+      "frameMax": 2116.6
+    },
+    "04-tilt-right": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6577.5,
+      "activity": 0.048,
+      "maxSpeed": 0.212,
+      "meanFoam": 0.0028,
+      "bubbles": 0,
+      "stepMs": 16.39,
+      "simTime": 14.93,
+      "frameAvg": 170.4,
+      "frameMax": 1983.3
+    },
+    "05-upside-down": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6552.4,
+      "activity": 0.051,
+      "maxSpeed": 0.772,
+      "meanFoam": 0.0151,
+      "bubbles": 1,
+      "stepMs": 18.1,
+      "simTime": 17.93,
+      "frameAvg": 168.5,
+      "frameMax": 1383.3
+    },
+    "06-hard-shake": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6390.3,
+      "activity": 0.387,
+      "maxSpeed": 1.188,
+      "meanFoam": 0.1748,
+      "bubbles": 13,
+      "stepMs": 34.87,
+      "simTime": 20.47,
+      "frameAvg": 179.7,
+      "frameMax": 1616.6
+    },
+    "07-resettled": {
+      "particles": 21684,
+      "capacity": 21684,
+      "pourRemaining": 0,
+      "outside": 0,
+      "fill": 6592.9,
+      "activity": 0.032,
+      "maxSpeed": 0.849,
+      "meanFoam": 0.0008,
+      "bubbles": 1,
+      "stepMs": 15.4,
+      "simTime": 26.93,
+      "frameAvg": 163.5,
+      "frameMax": 1566.6
+    }
+  },
+  "volume": {
+    "neverOutside": true,
+    "particlesConstant": true,
+    "fillStart": 6628.7,
+    "fillEnd": 6601.1,
+    "fillChangePct": -0.42
+  },
+  "frame": {
+    "particles": 21684,
+    "capacity": 21684,
+    "pourRemaining": 0,
+    "outside": 0,
+    "fill": 6621.9,
+    "activity": 0.033,
+    "maxSpeed": 0.75,
+    "meanFoam": 0.0007,
+    "bubbles": 0,
+    "stepMs": 16.29,
+    "simTime": 33.33,
+    "frameAvg": 697.2,
+    "frameMax": 1449.9
+  },
+  "consoleErrors": [],
+  "pass": true
+}

@@ -27,6 +27,11 @@ export class SimClient {
     this.worker.postMessage({ type: 'init', opts });
   }
 
+  // Tap splash at tank-normalised coordinates.
+  impulse(x, y) {
+    if (this.ready) this.worker.postMessage({ type: 'impulse', x, y });
+  }
+
   // Change grid resolution, keeping the current water (see FlipSim.resampleFrom).
   resample(cellsX) {
     if (!this.opts || this.opts.cellsX === cellsX) return;

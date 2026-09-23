@@ -6,7 +6,7 @@
 // back zero-copy. The same ArrayBuffers ping-pong forever: no per-frame allocation
 // of particle data.
 
-import { FlipSim } from './flip.js';
+import { FlipSim, FLUID } from './flip.js';
 import { FixedStep } from './fixed-step.js';
 import { Bubbles, MAX_BUBBLES } from './bubbles.js';
 
@@ -52,10 +52,11 @@ function writeOut(out) {
     out[4 * i + 3] = Math.sqrt(sp2);
   }
   stats.outside = outside;
-  stats.comX = (sx / n - h) * invW;
-  stats.comY = (sy / n - h) * invH;
-  stats.angMom = L / n;
-  stats.activity = Math.sqrt(e / n);
+  const nn = n > 0 ? n : 1; // pour-in starts with no active particles
+  stats.comX = n > 0 ? (sx / nn - h) * invW : 0.5;
+  stats.comY = n > 0 ? (sy / nn - h) * invH : 0.5;
+  stats.angMom = L / nn;
+  stats.activity = Math.sqrt(e / nn);
   stats.foamSum = fs;
   // Bubbles after the particles.
   const base = 4 * n, invWm = 1 / ((sim.nx - 2) * h);
@@ -69,6 +70,8 @@ function writeOut(out) {
     out[o + 3] = Math.min(1, age / 0.15);
   }
   stats.bubbles = nb;
+  stats.pourRemaining = sim.pourRemaining;
+  stats.maxSpeed = sim.maxSpeed;
 }
 
 self.onmessage = (e) => {
@@ -82,12 +85,33 @@ self.onmessage = (e) => {
     stats.stepMs = 0; stats.stepMsMax = 0;
     self.postMessage({
       type: 'ready',
-      count: sim.numParticles,
+      count: sim.capacity, // buffer capacity; frames report the active count (pour-in)
       radius: sim.r / ((sim.nx - 2) * sim.h), // particle radius as a fraction of tank width
       cellsX: sim.nx - 2,
       cellsY: sim.ny - 2,
       maxBubbles: MAX_BUBBLES,
     });
+    return;
+  }
+  if (m.type === 'impulse' && sim) {
+    // Tap splash at tank-normalised (x, y).
+    const ix = sim.h + m.x * (sim.nx - 2) * sim.h, iy = sim.h + m.y * (sim.ny - 2) * sim.h;
+    sim.impulse(ix, iy, 0.011, 0.9);
+    bubbles.burst(ix, iy, 10);
+    // Ripple: also kick the free surface directly "above" the tap (against the
+    // body force), so a tap anywhere in the water raises a visible crown that
+    // spreads as ripples.
+    const fx = input.gx - input.ax, fy = input.gy - input.ay;
+    const g = Math.hypot(fx, fy) || 1;
+    const ux = -fx / g, uy = -fy / g;
+    let sx = ix, sy = iy, found = false;
+    for (let k = 0; k < 400; k++) {
+      const i = Math.floor(sx * sim.invH), j = Math.floor(sy * sim.invH);
+      if (i < 1 || j < 1 || i >= sim.nx - 1 || j >= sim.ny - 1) break;
+      if (sim.cellType[i * sim.ny + j] !== FLUID) { found = k > 0; break; }
+      sx += ux * sim.h * 0.5; sy += uy * sim.h * 0.5;
+    }
+    if (found) sim.impulse(sx - ux * sim.h * 5, sy - uy * sim.h * 5, 0.009, 0.7);
     return;
   }
   if (m.type === 'step') {

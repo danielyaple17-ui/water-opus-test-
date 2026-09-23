@@ -31,6 +31,16 @@ export class Stage {
     this._apply();
   }
 
+  // Viewport (client) coordinates → stage-local CSS px, undoing the counter-rotation.
+  toStage(cx, cy, out) {
+    const vw = window.innerWidth, vh = window.innerHeight, a = this.angle;
+    if (a === 90) { out[0] = vh - cy; out[1] = cx; }
+    else if (a === 270) { out[0] = cy; out[1] = vw - cx; }
+    else if (a === 180) { out[0] = vw - cx; out[1] = vh - cy; }
+    else { out[0] = cx; out[1] = cy; }
+    return out;
+  }
+
   _apply() {
     const vw = window.innerWidth, vh = window.innerHeight;
     // Only counter-rotate on touch devices; a desktop landscape window is just a wide tank.

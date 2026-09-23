@@ -7,6 +7,7 @@ import { Stage, tryLockPortrait } from '../ui/stage.js';
 import { Stats } from '../ui/stats.js';
 import { SimClient } from '../sim/client.js';
 import { QualityController, LEVELS } from './quality.js';
+import { TouchGestures } from '../ui/touch.js';
 
 const $ = (id) => document.getElementById(id);
 const stageEl = $('stage');
@@ -79,7 +80,11 @@ debug.sim = sim;
 
 function initSim() {
   const aspect = stage.width / stage.height;
-  sim.init({ worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: cellsFor(quality.level), fill: 0.45 });
+  // The water pours in from the top and settles (`?pour=0` starts full: tests).
+  sim.init({
+    worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: cellsFor(quality.level), fill: 0.45,
+    pour: params.get('pour') !== '0',
+  });
 }
 
 let last = 0;
@@ -137,6 +142,13 @@ requestAnimationFrame(frame);
 // Test / debugging hook (read-only use by verify scripts).
 applyQuality(quality.level);
 debug.quality = quality;
+
+// Tap = splash ripple, two-finger tap (or R) = empty and pour again.
+new TouchGestures(stageEl, stage, {
+  onTap: (x, y) => { if (state.started) sim.impulse(x, y); },
+  onReset: () => { if (state.started) initSim(); },
+  frames: () => stats.totalFrames,
+});
 window.addEventListener('keydown', (e) => {
   const k = '1234'.indexOf(e.key);
   if (k >= 0) quality.force(k);

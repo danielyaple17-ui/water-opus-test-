@@ -110,6 +110,7 @@ uniform float uUseCaustics;
 uniform float uTime;
 uniform float uActivity;   // rms particle speed (m/s)
 uniform vec2 uCanvas;      // canvas size in px
+uniform float uMeniscus;   // capillary rise at the walls (CSS px)
 
 vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -187,8 +188,21 @@ float foamBubbles(vec2 p, float t, float density) {
 
 void main() {
   vec3 bg = texture(uBack, vUv).rgb;
-  float T = texture(uThick, vUv).r * uTScale;
-  if (uWater < 0.5 || T < 0.02) { outColor = vec4(toSrgb(bg), 1.0); return; }
+  // Meniscus: where the free surface meets a side wall, water climbs the glass
+  // by a few px (capillary rise, contact angle < 90°). Sampling the liquid field
+  // slightly "below" (against world-up) near walls perpendicular to the surface
+  // raises the waterline there with an exponential profile.
+  vec2 tUv = vUv;
+  {
+    vec2 size = uCanvas / uDpr;
+    vec2 px = vUv * size;
+    float wL = 1.0 - abs(uUp.x), wB = 1.0 - abs(uUp.y); // side walls ⟂ surface
+    float rise = uMeniscus * (wL * (exp(-px.x / 3.5) + exp(-(size.x - px.x) / 3.5)) +
+                              wB * (exp(-px.y / 3.5) + exp(-(size.y - px.y) / 3.5)));
+    tUv = vUv - uUp * rise * uDpr / uCanvas;
+  }
+  float T = texture(uThick, tUv).r * uTScale;
+  if (uWater < 0.5 || T < 0.02) { outColor = vec4(bg, 1.0); return; }
 
   // Level-set surface. The blurred thickness gives a smooth *shape*; the liquid
   // boundary is its 0.5 iso-line. Signed distance to it (canvas px):
@@ -198,10 +212,10 @@ void main() {
   float e = 2.0;
   // Thickness is saturated at 1 for the slope: density variation inside the bulk
   // (e.g. the packed layer at a wall) must not tilt normals; only the edge does.
-  float tl = min(texture(uThick, vUv - vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
-  float tr = min(texture(uThick, vUv + vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
-  float td = min(texture(uThick, vUv - vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
-  float tu = min(texture(uThick, vUv + vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
+  float tl = min(texture(uThick, tUv - vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
+  float tr = min(texture(uThick, tUv + vec2(uTexel.x * e, 0.0)).r * uTScale, 1.0);
+  float td = min(texture(uThick, tUv - vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
+  float tu = min(texture(uThick, tUv + vec2(0.0, uTexel.y * e)).r * uTScale, 1.0);
   vec2 g = vec2(tr - tl, tu - td) / (2.0 * e);       // per thickness texel
   float gl = length(g);
   float d = (T - 0.5) / max(gl, 1e-4) * uPxPerTexel; // canvas px, + inside
@@ -217,7 +231,7 @@ void main() {
   float mask = smoothstep(-0.75, 0.75, d);
   // Outside the liquid (faint spray below the iso-level) there is nothing to shade.
   // (Also keeps far-negative d from overflowing exp() below: inf·0 = NaN in mix.)
-  if (mask <= 0.0) { outColor = vec4(toSrgb(bg), 1.0); return; }
+  if (mask <= 0.0) { outColor = vec4(bg, 1.0); return; }
 
   // Refraction: shift the backplate lookup along the surface slope, scaled by
   // thickness; tiny per-channel spread gives dispersion at strong edges.
@@ -328,7 +342,7 @@ void main() {
   // foam = more bubbles present and a whiter, more opaque layer; sparse foam
   // breaks into scattered clumps.
   if (uUseFoam > 0.5) {
-    vec2 tf = texture(uThick, vUv).rg * uTScale;
+    vec2 tf = texture(uThick, tUv).rg * uTScale;
     float fv = clamp(tf.g / max(tf.r, 0.35), 0.0, 1.0);
     float fm = smoothstep(0.08, 0.6, fv);
     if (fm > 0.0) {
@@ -345,9 +359,7 @@ void main() {
   }
 
   vec3 col = mix(bg, water, mask);
-  // Until M8's tone mapper: soft shoulder so highlights don't clip hard.
-  col = col / (1.0 + max(col - 0.6, 0.0));
-  outColor = vec4(toSrgb(col), 1.0);
+  outColor = vec4(col, 1.0); // linear HDR; tone mapped in the post pass
 }`;
 
 // 4-tap box downsample of the thickness field, saturated to liquid coverage [0,1].
@@ -375,7 +387,7 @@ vec3 toSrgb(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
-void main() { outColor = vec4(toSrgb(texture(uBack, vUv).rgb), 1.0); }`;
+void main() { outColor = vec4(texture(uBack, vUv).rgb, 1.0); }`;
 
 function makeTarget(gl, w, h, fmt) {
   const tex = gl.createTexture();
@@ -407,6 +419,7 @@ export class SurfacePass {
     this.depthSigma = 6; // texels at 1/8 canvas res
     this.depthPasses = 3;
     this.time = 0;
+    this.meniscusCss = 5;
     this.activity = 0;
     this.targets = null;
     this._init();
@@ -448,7 +461,7 @@ export class SurfacePass {
   }
 
   // particles: ParticlePass (owns the VBO); fsVao: empty VAO for fullscreen draws.
-  render(particles, fsVao, backTex, canvasW, canvasH, up, passes) {
+  render(particles, fsVao, backTex, canvasW, canvasH, up, passes, outFbo = null) {
     const gl = this.gl;
     this._ensureTargets(canvasW, canvasH);
     const [A, B] = this.targets;
@@ -525,8 +538,8 @@ export class SurfacePass {
       }
     }
 
-    // 3. Composite to the canvas.
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // 3. Composite into the (HDR) scene target.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);
     gl.viewport(0, 0, canvasW, canvasH);
     gl.bindVertexArray(fsVao);
     if (!water) {
@@ -569,6 +582,7 @@ export class SurfacePass {
     gl.uniform1f(c.u.uTime, this.time);
     gl.uniform1f(c.u.uActivity, this.activity);
     gl.uniform2f(c.u.uCanvas, canvasW, canvasH);
+    gl.uniform1f(c.u.uMeniscus, passes.glass ? this.meniscusCss : 0);
     drawFullscreen(gl);
   }
 }

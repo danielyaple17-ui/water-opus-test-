@@ -76,6 +76,7 @@ export class FlipSim {
     const cols = Math.floor((interiorW - 2 * r) / dx);
     const rows = Math.floor((interiorH * fill - 2 * r) / dy);
     const count = cols * rows;
+    this.capacity = count; // arrays are sized for the full volume
     this.numParticles = count;
     this.pos = new Float32Array(2 * count);
     this.vel = new Float32Array(2 * count);
@@ -113,6 +114,20 @@ export class FlipSim {
     this.ghost = new Float64Array(n);
     this.mg = new PressureMG(this.nx, this.ny);
 
+    // Pour-in (start screen): begin empty and emit the full volume from a nozzle.
+    this.pourRemaining = 0;
+    this.sepBoost = 0; // s of extra particle separation left (after pouring)
+    this.pourSpeed = 0.35; // m/s
+    this.pourWidth = 0.009; // m
+    this._seed = 20260923;
+    if (opts.pour) {
+      this.pourRemaining = count;
+      this.numParticles = 0;
+      // Hex-packing rest density (what a settled fresh pool measures), since
+      // the first steps won't have a settled pool to measure it from.
+      this.restDensity = (h * h) / (2 * r * Math.sqrt(3) * r);
+    }
+
     // Diagnostics (written each step, read by the host).
     this.fluidCells = 0;
     this.fillVolume = 0;
@@ -125,7 +140,7 @@ export class FlipSim {
     this.fast1 = 0;
     this.fast2 = 0;
     this.driftK = 0.1;
-    this.driftBand = 0.02;
+    this.driftBand = 0.03; // 0.02 kept randomly packed (poured) water boiling; 0.03 is calm and keeps volume
     // Effective kinematic viscosity (m²/s). Far above water's 1e-6: in 2D the
     // thin wall boundary layers that damp real sloshing are unresolved, and an
     // inviscid 2D flow keeps its vortices forever. Clamped for explicit stability.
@@ -153,7 +168,14 @@ export class FlipSim {
     // Hard speed limit: 12 cells per step (≈1.2 m/s at 84 cells across).
     this.vmax = (12 * this.h) / dt;
     const sdt = dt / sub;
-    this._pushApart(this.separationIters);
+    // A poured stream lands as a random, locally compressed packing; 2 separation
+    // passes can't relax it, so density drift correction keeps firing and the
+    // pool never calms (tested: rms 0.12 m/s 20 s later). One extra pass while
+    // pouring and for 8 s after settles it (rms 0.02, fill within 1%).
+    let sep = this.separationIters;
+    if (this.pourRemaining > 0) { this._pour(dt, fx, fy); this.sepBoost = 8; }
+    if (this.sepBoost > 0) { this.sepBoost -= dt; sep += 1; }
+    this._pushApart(sep);
     this.stepVel.set(this.vel);
     for (let s = 0; s < sub; s++) {
       // Forces → grid → projection → back to particles → advect with the
@@ -197,6 +219,63 @@ export class FlipSim {
       gen = gen < 0 ? 0 : gen > 1 ? 1 : gen;
       const f = foam[i] * decay;
       foam[i] = f > gen ? f : gen;
+    }
+  }
+
+  _rand() {
+    let s = this._seed;
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    this._seed = s >>> 0;
+    return this._seed / 4294967296;
+  }
+
+  // Emits one step's worth of particles from a nozzle at the tank's top (the
+  // wall point furthest along real-world up), flowing along gravity. The patch
+  // is exactly one step long, so the stream is continuous at the rest spacing.
+  _pour(dt, fx, fy) {
+    const g = Math.hypot(fx, fy) || 1;
+    const ux = -fx / g, uy = -fy / g; // world-up in stage coords
+    const cx = 0.5 * this.width, cy = 0.5 * this.height;
+    const tx = ux !== 0 ? ((ux > 0 ? this.width - this.h : this.h) - cx) / ux : 1e9;
+    const ty = uy !== 0 ? ((uy > 0 ? this.height - this.h : this.h) - cy) / uy : 1e9;
+    const t = Math.min(tx, ty) - 2.5 * this.h;
+    const nx0 = cx + ux * t, ny0 = cy + uy * t; // nozzle centre
+    const len = this.pourSpeed * dt;
+    const area = this.pourWidth * len;
+    const per = (2 * this.r) * (Math.sqrt(3) * this.r);
+    let n = Math.round(area / per);
+    if (n > this.pourRemaining) n = this.pourRemaining;
+    const px = -uy, py = ux; // across the stream
+    const pos = this.pos, vel = this.vel, foam = this.foam;
+    for (let k = 0; k < n; k++) {
+      const i = this.numParticles++;
+      const a = (this._rand() - 0.5) * this.pourWidth;
+      const b = this._rand() * len;
+      pos[2 * i] = nx0 + px * a - ux * b;
+      pos[2 * i + 1] = ny0 + py * a - uy * b;
+      vel[2 * i] = -ux * this.pourSpeed + px * (this._rand() - 0.5) * 0.02;
+      vel[2 * i + 1] = -uy * this.pourSpeed + py * (this._rand() - 0.5) * 0.02;
+      foam[i] = 0;
+    }
+    this.pourRemaining -= n;
+  }
+
+  // Tap splash: a radial kick around (x, y) (m) that fades with distance, and
+  // a little whitewater where it hits.
+  impulse(x, y, radius, speed) {
+    const pos = this.pos, vel = this.vel, foam = this.foam;
+    const r2 = radius * radius;
+    for (let i = 0, n = this.numParticles; i < n; i++) {
+      const dx = pos[2 * i] - x, dy = pos[2 * i + 1] - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= r2 || d2 === 0) continue;
+      const d = Math.sqrt(d2);
+      const w = 1 - d / radius;
+      const k = speed * w * w / d;
+      vel[2 * i] += dx * k;
+      vel[2 * i + 1] += dy * k;
+      const f = 0.7 * w;
+      if (foam[i] < f) foam[i] = f;
     }
   }
 
@@ -690,15 +769,19 @@ export class FlipSim {
   // the tank interior, velocity and foam copied, sub-spacing jitter to break
   // duplicates; separation resolves overlaps within a few steps).
   static resampleFrom(old, opts) {
-    const sim = new FlipSim(opts);
-    const No = old.numParticles, Nn = sim.numParticles;
+    const sim = new FlipSim({ ...opts, pour: false });
+    const No = old.numParticles;
+    // Keep the same fraction of the volume poured in (mid-pour quality changes).
+    const Nn = Math.round(sim.capacity * (No / old.capacity));
+    sim.numParticles = Nn;
+    sim.pourRemaining = sim.capacity - Nn;
     const oiw = (old.nx - 2) * old.h, oih = (old.ny - 2) * old.h;
     const niw = (sim.nx - 2) * sim.h, nih = (sim.ny - 2) * sim.h;
     const r = sim.r;
     let seed = 987654321;
     const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) - 0.5; };
     for (let k = 0; k < Nn; k++) {
-      const i = Math.min(No - 1, Math.floor((k * No) / Nn));
+      const i = Math.min(No - 1, Math.floor((k * No) / Math.max(Nn, 1)));
       const up = Nn > No; // upsampling duplicates particles: jitter them apart
       sim.pos[2 * k] = sim.h + ((old.pos[2 * i] - old.h) / oiw) * niw + (up ? rnd() * 2 * r : 0);
       sim.pos[2 * k + 1] = sim.h + ((old.pos[2 * i + 1] - old.h) / oih) * nih + (up ? rnd() * 2 * r : 0);

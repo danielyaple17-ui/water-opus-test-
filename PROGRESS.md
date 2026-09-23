@@ -10,11 +10,11 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M5: Color that deepens with thickness, glow through thin water, highlights, waterline
 - [x] M6: Foam, bubbles, caustics
 - [x] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
-- [ ] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
+- [x] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
 - [ ] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
 - [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M7)
+## Architecture (as of M8)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -50,11 +50,16 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   6. (M6) Caustics: for each water pixel, march up to 24 × 10 CSS px against gravity through the depth field to the surface, with the crossing interpolated so the distance is continuous. The surface slope there shears, and the distance h sets and fades (e^(−h/90), zero before the march limit), a division-free animated Voronoi-edge caustic in world-aligned coordinates. Its speed scales with the water's activity. The caustic light is *added* to the refracted back wall. Pass `caustics`.
   7. (M6) `render/bubbles.js`: bubble sprites (thin bright rim, clear interior, specular dot toward world-up) alpha-blended after the composite, in display space until the M8 HDR buffer. Pass `bubbles`.
   - Shader hygiene (M5 bugs): GLSL `smoothstep(e0 > e1)` and `pow(negative, y)` are undefined (SwiftShader returned garbage, i.e. black specks in spray), and far-outside pixels overflowed exp(): inf·0 = NaN in mix. Fixed: ordered edges, explicit squares, clamp d ≥ 0, early-out when mask = 0.
+- `render/post.js` (M8): the whole scene (backplate/water composite, bubbles, debug dots) is rendered **linear HDR** into an RGBA16F target (RGBA8 fallback), then a post pass does a soft-knee bright-pass (threshold 0.9) → 4-level downsample → tent upsample-add bloom (k 0.35, highlights only), exposure 1.1, ACES filmic (Narkowicz fit), glass feel (faint world-aligned front-glass reflection band + streak, thin bright glass edges with a darker inner falloff, lens vignette after tone mapping), sRGB encode and ±½ LSB dither. The per-shader sRGB encodes and the ad-hoc highlight shoulder are gone. Passes: `bloom`, `tonemap`, `glass`.
+- Meniscus (M8, `render/surface.js`): near walls perpendicular to the free surface the thickness lookup is offset against world-up by 5·e^(−d/3.5 px) CSS px, so the waterline curves up the glass (off with the `glass` pass).
+- Pour-in (M8, `sim/flip.js`): `pour: true` starts empty (arrays keep full capacity, `numParticles` grows). Each step a jittered patch, one step long at the rest spacing, is emitted at a nozzle 2.5 cells inside the wall furthest along world-up, flowing along gravity at 0.35 m/s, 9 mm wide (≈1.7 s to fill at High). The rest density is set analytically. One extra separation pass runs while pouring and for 8 s after. Mid-pour quality changes keep the poured fraction.
+- Drift band raised 0.02 → 0.03: a randomly packed pool (poured, or after hard shaking) never calmed with 2%, drift kept firing (rms 0.10–0.12 m/s 20 s later, volume −3%). At 3% it settles in ≈4 s and holds volume within 0.5% (Node A/B).
+- Tap / reset (M8, `ui/touch.js`, worker `impulse`): a still tap (< 12 px, and < 350 ms **or** ≤ 3 rendered frames) splashes. There's a radial kick (r 11 mm, 0.9 m/s) at the tap point with a foam kick and up to 10 bubbles, plus a second kick just below the free surface found by marching against the body force, so a tap anywhere raises a visible crown. A two-finger tap (or `R`) re-inits the sim and pours again. Client coords are mapped through the stage's counter-rotation (`Stage.toStage`). `?pour=0` starts full (used by m1–m7 so their volume baselines stay valid).
 - `render/renderer.js` – backplate redesigned in M4 (out-of-focus softbox spill from above, dim warm bokeh glow, mottled frosted texture + grain) so refraction is readable. Passes: backplate, water, blur, refraction, reflection, particles.
 - `render/` – WebGL2 context (context-loss listeners), shader helpers with cached uniform locations, backplate baked once per resize into an SRGB8_ALPHA8 texture (future refraction source), linear→sRGB composite.
 - `ui/debug.js` – triple-tap any corner (or `D`): fps, frame avg/max, CPU ms, particles, quality, render px, input source/permission, gravity, tank accel, spin, gravity compass, per-pass toggles, sensor-sign toggle.
 - `ui/stats.js` – ring-buffer frame stats (no per-frame allocation).
-- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m7.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
+- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m8.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
 
 ## Measurements
 ### M1 (2026-09-22) – headless Chromium, SwiftShader (software GL), 390×844 @2x
@@ -122,6 +127,15 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   - Per level in browser (SwiftShader, worker contends with software GL): step calm/shake Low 5.5/10.6, Med 8.5/17.6, High 17.0/40.2, Ultra 17.4/34.0 ms; render px 390×844 / 546×1182 / 663×1435 / 780×1688. Frame 144–405 ms (software GL, not meaningful).
 - Visual: Low is noticeably softer (coarser shapes, fewer small drops) but still clearly water; Ultra and High show air pockets, thin sheets and detached drops.
 
+### M8 (2026-09-23) – headless Chromium + SwiftShader, 390×844 @2x, pinned High
+- `node verify/m8.mjs` → pass, 0 console errors. Screenshots `verify/M8/`: pour at 0.25/0.6/1.0/1.6 s, poured-settled, tilt L/R, upside-down, hard shake, resettled, tap splash, 09 no-bloom, 10 no-tonemap, 11 no-glass, 12 after two-finger reset.
+- Pour-in: the tank fills from empty to 21,684/21,684 particles; settled fill **+0.11%** vs a pre-filled tank (6628.7 vs 6621.5). Node: fills in ≈1.5 s and calm within ≈12 s (rms 0.020, 0 leaks).
+- Volume over the poses after pouring: particles constant, 0 outside, fill 6628.7 → 6601.1 (**−0.42%**, measured once calm).
+- Tap: mean foam 0.0007 → 0.0245 (35×), peak speed rises to ≈1.2 m/s. Two-finger tap (real CDP multi-touch): exactly 1 re-init and the re-pour seen (21,188 particles still to pour).
+- Frame: SwiftShader 700 ms avg, 1.45 s worst (not representative); worker step 16.3 ms at High on this VM while contending with software GL. GPU additions: one RGBA16F full-res target, bloom chain ≈ 1/3 of a full-res pass, final pass ≈ 10 ALU-heavy ops per pixel.
+- Test-harness lessons: pointer-event timestamps are *delivery* times, so a 60 ms two-finger tap measured 555–1188 ms under software GL. This led to the frame-count tap rule. Whole-tank rms and even peak speed are poor splash detectors (calm water has single outliers near 0.8 m/s), so the test judges the splash by its whitewater.
+- Visual (honest): the calm tank now reads like a studio product shot (meniscus climbing both walls, thin glass edge highlights, vignette, deep teal gradient, soft bloom on the waterline). The pour is the best moment: a stream necking into drops as it falls (Rayleigh-Plateau-like breakup), plunging with bubbles. Weak spots remain: splashes look glossy/jelly-like with a regular bubble texture; caustics are strand-like; the resting waterline still shows a faint stair-step.
+
 ## Known Issues (priority order)
 1. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
 2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
@@ -138,4 +152,4 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 13. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
 14. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
 
-NEXT: M8 – polish: move composite + bubbles into a linear HDR buffer, ACES/AgX tone mapping, highlight-only bloom, glass feel (vignette, faint glass reflections, meniscus curving up at the walls), pour-in start animation, tap-to-splash ripple and two-finger reset; verify poses + pour-in + tap + volume.
+NEXT: M9 – hardening: WebGL context loss/restore (recreate all passes + targets, keep the sim running), pause on hidden tab (sim + render), thermal/long-session behaviour (simulated frame-time drift triggers the guard), memory/allocation audit of the frame loop, and a real-device test checklist + remote-debug instructions (device results recorded when available).

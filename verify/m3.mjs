@@ -22,7 +22,7 @@ try {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${server.url}?cells=${CELLS}`);
+  await page.goto(`${server.url}?cells=${CELLS}&pour=0`);
   await page.waitForTimeout(500);
   await page.click('#start');
   // Physics test: render the cheap dot view so SwiftShader keeps ~real-time (the M4
@@ -138,7 +138,7 @@ try {
   const dctx = await browser.newContext({ viewport: { width: 500, height: 900 }, ignoreHTTPSErrors: true });
   const dp = await dctx.newPage();
   dp.on('pageerror', (e) => errors.push(String(e)));
-  await dp.goto(`${server.url}?cells=${CELLS}`);
+  await dp.goto(`${server.url}?cells=${CELLS}&pour=0`);
   await dp.mouse.move(250, 880);
   await dp.mouse.click(250, 450);
   await dots(dp);

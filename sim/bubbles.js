@@ -83,5 +83,19 @@ export class Bubbles {
     this.count = k;
   }
 
+  // A tap entrains a few bubbles around (x, y) if that point is inside the water.
+  burst(x, y, n) {
+    const sim = this.sim;
+    for (let k = 0; k < n && this.count < MAX_BUBBLES; k++) {
+      const bx = x + (this._rand() - 0.5) * sim.h * 8, by = y + (this._rand() - 0.5) * sim.h * 8;
+      if (!this._isFluid(bx, by)) continue;
+      const i = this.count++;
+      this.x[i] = bx; this.y[i] = by;
+      const u = this._rand();
+      this.r[i] = 0.0003 + u * u * 0.0007;
+      this.age[i] = 0;
+    }
+  }
+
   clear() { this.count = 0; }
 }

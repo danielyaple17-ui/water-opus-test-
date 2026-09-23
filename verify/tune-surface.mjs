@@ -10,7 +10,7 @@ const server = await startServer();
 const browser = await launch(chromium);
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, ignoreHTTPSErrors: true })).newPage();
 page.on('pageerror', (e) => console.error('pageerror', e));
-await page.goto(server.url);
+await page.goto(server.url + '?pour=0');
 await page.click('#start');
 const G = 9.81;
 await page.evaluate((G) => { window.__spec = { x: 0, y: G, shake: 0 }; const t0 = performance.now(); setInterval(() => { const t = (performance.now() - t0) / 1000, s = window.__spec, a = s.shake * Math.sin(2 * Math.PI * 5 * t);

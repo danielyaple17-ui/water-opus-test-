@@ -1,8 +1,8 @@
 // Air bubbles drawn as sprites over the water composite. A bubble in water
 // reads as a thin bright rim (light refracted/reflected at the grazing edge),
 // a slightly darker, clear interior and a small specular dot toward the
-// light. Colours are produced in display (sRGB) space and alpha-blended over
-// the composite (M8 moves blending into the linear HDR buffer).
+// light. Colours are linear and premultiplied, alpha-blended over
+// the composite in the linear HDR scene buffer.
 
 import { program } from './gl.js';
 
@@ -37,9 +37,10 @@ void main() {
   float rim = smoothstep(0.62, 0.95, d) * disk;
   vec2 hl = uUp * 0.42 + vec2(-uUp.y, uUp.x) * 0.25;
   float spec = exp(-dot(pc * s - hl, pc * s - hl) * 38.0);
-  vec3 rimCol = vec3(0.78, 0.90, 0.92);
+  // Linear HDR (tone mapped later): the rim is a mid-grey sheen, the glint is hot.
+  vec3 rimCol = vec3(0.30, 0.42, 0.45);
   float a = vA * (0.10 * disk + 0.55 * rim + 0.9 * spec);
-  vec3 c = rimCol * (0.55 * rim) + vec3(1.0) * spec;
+  vec3 c = rimCol * (0.55 * rim) + vec3(2.2) * spec;
   outColor = vec4(c * vA, clamp(a, 0.0, 1.0)); // premultiplied
 }`;
 

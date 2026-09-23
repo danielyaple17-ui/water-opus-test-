@@ -30,7 +30,7 @@ void main() {
   float s = clamp(vSpeed / 0.8, 0.0, 1.0);
   vec3 c = mix(vec3(0.010, 0.080, 0.220), vec3(0.45, 0.80, 0.95), s);
   c *= 0.75 + 0.25 * (1.0 - r2);
-  outColor = vec4(toSrgb(c), 1.0);
+  outColor = vec4(c, 1.0); // linear: drawn into the HDR scene buffer
 }`;
 
 export class ParticlePass {

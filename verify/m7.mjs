@@ -21,7 +21,7 @@ async function newPage(query = '') {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(server.url + query);
+  await page.goto(server.url + (query ? query + '&pour=0' : '?pour=0'));
   await page.waitForTimeout(400);
   await page.click('#start');
   await page.evaluate((G) => {

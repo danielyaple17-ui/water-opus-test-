@@ -18,7 +18,7 @@ try {
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(server.url);
+  await page.goto(server.url + '?pour=0');
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(dir, '00-start.png') });
 
