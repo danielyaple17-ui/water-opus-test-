@@ -12,9 +12,9 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
 - [x] M8: Polish: tone mapping, bloom, glass feel, pour-in animation, tap ripples
 - [x] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
-- [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
+- [x] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M9)
+## Architecture (as of M10)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -155,13 +155,24 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Allocation (`verify/alloc-test.mjs`, precise heap, 1× DPR, Low): not started 585 B/frame; sim frozen with rendering on **837 B/frame** (the measuring closures themselves plus a ~64 B view); sim running 58–76 KB/frame. Isolation shows the large figure is the transferred ArrayBuffer (≈115 KB at Low) accounted as external memory on each receive. It is moved, not copied, but it still counts as allocation. The app's own per-frame JS allocation is the typed-array view required per transfer.
 - **Real-device testing: not possible from this environment.** Tooling is ready (bench mode, device doc, sensor-sign toggle); results are pending a person with a phone (Known Issue 1).
 
+### M10 (2026-09-23) – headless Chromium + SwiftShader, 390×844 @2x, pinned High
+- Critique of the M9 frames vs macro photography of water in glass (calm, tilted, splash, pour). The pour and the calm studio look already held up. The three weakest problems, worst first:
+  1. **Waterline stair-step**: a regular ~20 px sawtooth on every free surface (particle-scale noise surviving the blur). Real still water reads as a perfect line with long, soft waves.
+  2. **Uniform glossy/jelly edge**: every silhouette had the same pale rim and a glowing ribbon inside it. Real drops have directional light: a hot pin-point glint and hairline on the lit side, a dark refraction outline, and a focused crescent on the far side.
+  3. **Strand caustics**: vertical hair-like streaks (the pattern domain was compressed ~6.7× vertically), where a real back wall shows a curved, patchy web.
+- Fixes (see Architecture 2a, 6, 6a): surface-tangent smoothing pass; directional edge shading; isotropic, warped, depth-sharpened caustic web. Before/after: `verify/M10/before-*.png` → `after-*.png` (fixes 2 and 3) and `fix1-*-{before,after}.png` (tangent smoothing alone).
+- `node verify/m10.mjs` → pass, 0 console errors. Screenshots `verify/M10/01-pour … 07-resettled`, each pose with a `-nosmooth` twin from the same frozen sim state.
+  - Volume: particles constant (21,684), 0 outside through tilt L/R, upside-down and hard shake; fill 6598.5 → 6618.6 (**+0.30%**, calm to calm).
+  - Frame (SwiftShader, not representative): avg 187 ms, worst 1033 ms; worker 17.2 ms/step (contended). New GPU cost: one extra pass over the half-res thickness target, 16 taps + 6 gradient probes per edge texel (early-out elsewhere).
+- Visual (honest): at thumbnail size calm, tilted and upside-down frames now read as a studio product shot of a tank of water: smooth waterline with long waves, soft caustic web fading with depth, glints on the lit side. The pour is convincing. What still gives it away: foam is a screen-space bubble texture that covers the pool uniformly during the pour and doesn't move with the water; lit-edge glints are slightly beaded (a chain of dots rather than a streak); the pour nozzle shows as a square-cornered block at the top for the first ~0.5 s.
+
 ## Known Issues (priority order)
 1. **Needs a real device (user action): run `?bench=1` on an iPhone 13+ per `docs/DEVICE_TESTING.md` and paste the JSON here; also confirm the sensor sign.** The Definition of Done (60 fps at High) can't be confirmed without it. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
-2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
-3. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
-4. Edge look is uniform and slightly jelly-like: the same glossy rim everywhere. Needs variation, e.g. dark refraction band just inside the edge (backplate magnified/inverted), rim strength tied to curvature, sharper and rarer speculars. M10 candidate.
-5. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
-6. Foam texture is screen-space: its bubble cells don't travel with the water (they only drift in place). Fix: advect a foam UV/offset field, or splat per-particle bubble sprites for dense foam. Caustics look like strands, not a network. Both M10 candidates.
+2. Foam texture is screen-space: its bubble cells don't travel with the water (they only drift in place). Fix: advect a foam UV/offset field, or splat per-particle bubble sprites for dense foam. It also covers the pool uniformly during the pour (M10 frame 01) and reads grey/regular. **Top visual issue after M10.**
+3. Lit-edge specular glints are slightly beaded (dot chain) because the power-900 lobe picks up small normal wiggles left after tangent smoothing. Fix: evaluate the glint on a normal from a wider-stencil gradient, or stretch it along the edge tangent.
+4. Pour nozzle appears as a square-cornered block at the top during the first ~0.5 s of the pour. Emit from a rounded/narrower inlet, or keep the inlet just off-screen.
+5. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
+6. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
 7. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
 8. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
 9. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
@@ -170,5 +181,6 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 12. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
 13. Per-frame buffer transfer still counts ~60–75 KB/frame of external-memory churn on the main thread (moved, not copied). Zero-message alternative: SharedArrayBuffer double buffer + Atomics.waitAsync when `crossOriginIsolated` (the dev server sends COOP/COEP; production hosting must too), keeping transfers as the fallback.
 14. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
+15. `verify/tune-surface.mjs` hangs (no timeout) when a shader fails to compile, e.g. the GLSL ES reserved word `patch` hit in M10. Add a sim-stall timeout and surface `program()` errors.
 
-NEXT: M10 – final realism pass: write a side-by-side critique of the current screenshots against macro reference photography of water in glass (calm, tilted, splash, pour), pick the 3 weakest visual problems, and fix them one by one with before/after screenshots.
+NEXT: All milestones checked; DoD is gated on Known Issue 1 (real-device bench, user action). Meanwhile fix Known Issue 2: make foam travel with the water (advected foam offset field or per-particle bubble sprites for dense foam) and stop it covering the whole pool during the pour.
