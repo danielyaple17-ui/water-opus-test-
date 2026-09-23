@@ -40,7 +40,8 @@ const debug = new DebugOverlay($('debug'), stageEl, {
   motion,
   stats,
   extraToggles: {
-    'invert sensor sign': { get: () => motion.sign < 0, set: (v) => motion.setSign(v ? -1 : 1) },
+    // Relative to this platform's default (iOS already defaults to inverted).
+    'invert sensor sign': { get: () => motion.sign !== motion.platformSign, set: (v) => motion.setSign(v ? -motion.platformSign : motion.platformSign) },
   },
 });
 

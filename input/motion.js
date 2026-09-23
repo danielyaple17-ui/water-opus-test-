@@ -35,12 +35,19 @@ export class MotionInput {
     this.permission = 'unknown'; // 'unknown' | 'granted' | 'denied' | 'unsupported'
     this.motionEvents = 0;
 
-    // Sensor sign: +1 follows the W3C spec (aIG = +9.81 on the "up" axis at rest).
-    // Some older WebKit builds invert it; the debug overlay can flip this.
-    this.sign = 1;
+    // Sensor sign: +1 follows the W3C spec (aIG = +9.81 on the "up" axis at
+    // rest, as Chrome on Android reports). iOS/iPadOS WebKit reports the
+    // opposite sign (confirmed on an iPhone, iOS 18.7: the water fell
+    // "up" with +1), so Apple touch devices default to -1. An explicit choice
+    // from the debug overlay is stored and wins over the default.
+    const ua = navigator.userAgent || '';
+    const appleTouch = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    this.platformSign = appleTouch ? -1 : 1;
+    this.sign = this.platformSign;
     try {
       const s = localStorage.getItem(SIGN_KEY);
       if (s === '-1') this.sign = -1;
+      else if (s === '1') this.sign = 1;
     } catch (_) { /* storage unavailable */ }
 
     // Raw & filter state (stage coords).
