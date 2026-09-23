@@ -1,221 +1,126 @@
 {
+  "results": {
+    "fast60": {
+      "final": "Ultra",
+      "changes": 1,
+      "log": [
+        {
+          "t": 12.1,
+          "to": "Ultra",
+          "why": "headroom"
+        }
+      ]
+    },
+    "gpuBound": {
+      "final": "Med",
+      "changes": 3,
+      "log": [
+        {
+          "t": 6.1,
+          "to": "Med",
+          "why": "overload: frame 26.7 ms, sim ×0.99"
+        },
+        {
+          "t": 66.6,
+          "to": "High",
+          "why": "headroom"
+        },
+        {
+          "t": 72.7,
+          "to": "Med",
+          "why": "overload: frame 26.7 ms, sim ×0.99"
+        }
+      ]
+    },
+    "borderline": {
+      "final": "High",
+      "changes": 6,
+      "log": [
+        {
+          "t": 12.1,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 18.1,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        },
+        {
+          "t": 78.6,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 84.7,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        },
+        {
+          "t": 205.7,
+          "to": "Ultra",
+          "why": "headroom"
+        },
+        {
+          "t": 211.7,
+          "to": "High",
+          "why": "overload: frame 21.7 ms, sim ×0.99"
+        }
+      ]
+    },
+    "simBound": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 6,
+          "to": "Med",
+          "why": "overload: frame 16.7 ms, sim ×0.79"
+        }
+      ]
+    },
+    "thermal": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 86.5,
+          "to": "Med",
+          "why": "thermal: frame time drifted +15%"
+        }
+      ]
+    },
+    "fast120": {
+      "final": "Ultra",
+      "changes": 1,
+      "log": [
+        {
+          "t": 12,
+          "to": "Ultra",
+          "why": "headroom"
+        }
+      ]
+    },
+    "battery": {
+      "final": "Med",
+      "changes": 1,
+      "log": [
+        {
+          "t": 0,
+          "to": "Med",
+          "why": "low battery"
+        }
+      ]
+    }
+  },
   "checks": {
-    "contextLoss": {
-      "lostFlag": true,
-      "simAdvancedWhileLost": 1,
-      "restoredCount": 1,
-      "particlesDrawnAfter": 21684,
-      "fillBefore": 6583.7,
-      "fillAfter": 6615.1,
-      "pass": true
-    },
-    "pause": {
-      "simAdvanceWhileHidden": 0,
-      "framesWhileHidden": 0,
-      "simAdvanceAfterResume": 0.116,
-      "pass": true
-    },
-    "contextFailed": {
-      "shown": true,
-      "text": "Graphics were reset. Tap to reload.",
-      "pass": true
-    },
-    "bench": {
-      "rows": 8,
-      "pass": true
-    }
+    "fast60": true,
+    "gpuBound": true,
+    "borderline": true,
+    "simBound": true,
+    "thermal": true,
+    "fast120": true,
+    "battery": true
   },
-  "alloc": {
-    "seconds": 10,
-    "frames": 15,
-    "bytesAllocated": 0,
-    "bytesPerFrame": 0,
-    "heapDrops": 0,
-    "samples": 500
-  },
-  "poses": {
-    "04-tilt-left": {
-      "particles": 21684,
-      "outside": 0,
-      "fill": 6542.6,
-      "simTime": 11.583,
-      "frames": 800,
-      "lost": false,
-      "restored": 1,
-      "particlesDrawn": 21684,
-      "frameAvg": 166.9,
-      "frameMax": 1549.9,
-      "stepMs": 17.38,
-      "level": "High"
-    },
-    "05-tilt-right": {
-      "particles": 21684,
-      "outside": 0,
-      "fill": 6572,
-      "simTime": 14.017,
-      "frames": 950,
-      "lost": false,
-      "restored": 1,
-      "particlesDrawn": 21684,
-      "frameAvg": 164.6,
-      "frameMax": 1549.9,
-      "stepMs": 17.46,
-      "level": "High"
-    },
-    "06-upside-down": {
-      "particles": 21684,
-      "outside": 0,
-      "fill": 6503,
-      "simTime": 16.95,
-      "frames": 1130,
-      "lost": false,
-      "restored": 1,
-      "particlesDrawn": 21684,
-      "frameAvg": 162.2,
-      "frameMax": 1549.9,
-      "stepMs": 17.5,
-      "level": "High"
-    },
-    "07-hard-shake": {
-      "particles": 21684,
-      "outside": 0,
-      "fill": 6274.4,
-      "simTime": 19.417,
-      "frames": 1282,
-      "lost": false,
-      "restored": 1,
-      "particlesDrawn": 21684,
-      "frameAvg": 189.2,
-      "frameMax": 1616.6,
-      "stepMs": 37.67,
-      "level": "High"
-    },
-    "08-resettled": {
-      "particles": 21684,
-      "outside": 0,
-      "fill": 6380.8,
-      "simTime": 25.917,
-      "frames": 1692,
-      "lost": false,
-      "restored": 1,
-      "particlesDrawn": 21684,
-      "frameAvg": 179.9,
-      "frameMax": 2049.9,
-      "stepMs": 26.14,
-      "level": "High"
-    }
-  },
-  "volume": {
-    "neverOutside": true,
-    "particlesConstant": true,
-    "fillStart": 6583.7,
-    "fillEnd": 6600.3,
-    "fillChangePct": 0.25
-  },
-  "frame": {
-    "particles": 21684,
-    "outside": 0,
-    "fill": 6429.9,
-    "simTime": 29.483,
-    "frames": 1914,
-    "lost": false,
-    "restored": 1,
-    "particlesDrawn": 21684,
-    "frameAvg": 167.6,
-    "frameMax": 866.6,
-    "stepMs": 21.04,
-    "level": "High"
-  },
-  "bench": {
-    "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.7390.37 Safari/537.36",
-    "dpr": 2,
-    "screen": [
-      390,
-      844
-    ],
-    "results": [
-      {
-        "level": "Ultra",
-        "phase": "calm",
-        "particles": 21684,
-        "frameAvgMs": 1033.29,
-        "frameP95Ms": 2049.93,
-        "frameMaxMs": 2049.93,
-        "stepMs": 41.49,
-        "simRatio": 0.02
-      },
-      {
-        "level": "Ultra",
-        "phase": "shake",
-        "particles": 21684,
-        "frameAvgMs": 1004.12,
-        "frameP95Ms": 2449.9,
-        "frameMaxMs": 2449.9,
-        "stepMs": 37.78,
-        "simRatio": 0.02
-      },
-      {
-        "level": "High",
-        "phase": "calm",
-        "particles": 21684,
-        "frameAvgMs": 1024.96,
-        "frameP95Ms": 2033.25,
-        "frameMaxMs": 2033.25,
-        "stepMs": 39.05,
-        "simRatio": 0.02
-      },
-      {
-        "level": "High",
-        "phase": "shake",
-        "particles": 21684,
-        "frameAvgMs": 754.14,
-        "frameP95Ms": 2033.26,
-        "frameMaxMs": 2033.26,
-        "stepMs": 36.52,
-        "simRatio": 0.02
-      },
-      {
-        "level": "Med",
-        "phase": "calm",
-        "particles": 12495,
-        "frameAvgMs": 683.31,
-        "frameP95Ms": 1049.96,
-        "frameMaxMs": 1049.96,
-        "stepMs": 26.39,
-        "simRatio": 0.03
-      },
-      {
-        "level": "Med",
-        "phase": "shake",
-        "particles": 12495,
-        "frameAvgMs": 1249.95,
-        "frameP95Ms": 2483.24,
-        "frameMaxMs": 2483.24,
-        "stepMs": 25.86,
-        "simRatio": 0.01
-      },
-      {
-        "level": "Low",
-        "phase": "calm",
-        "particles": 6952,
-        "frameAvgMs": 524.98,
-        "frameP95Ms": 1633.27,
-        "frameMaxMs": 1633.27,
-        "stepMs": 8.29,
-        "simRatio": 0.03
-      },
-      {
-        "level": "Low",
-        "phase": "shake",
-        "particles": 6952,
-        "frameAvgMs": 344.43,
-        "frameP95Ms": 783.3,
-        "frameMaxMs": 783.3,
-        "stepMs": 8.74,
-        "simRatio": 0.05
-      }
-    ]
-  },
-  "consoleErrors": [],
   "pass": true
 }
