@@ -154,7 +154,11 @@ export class FlipSim {
     this.vmax = 1e9;
     this.vlim = 1e9;
     this.cflCells = opts.cflCells ?? 4; // cells a particle may cross per substep (6 was tried: noisier, −1.6% volume)
-    this.maxSubsteps = opts.maxSubsteps ?? 3;
+    // Substep cap by cost: in a hard shake ~92% of steps want 3 substeps. On an
+    // iPhone (iOS 18.7) High then took 8.45 ms per 120 Hz step (> 8.33 ms, sim
+    // ×0.73); capping at 2 cuts the shake step ~21% with the same volume.
+    // Low/Med (< 80 cells) can afford 3 and keep it.
+    this.maxSubsteps = opts.maxSubsteps ?? (cellsX >= 80 ? 2 : 3);
     this.fast1 = 0;
     this.fast2 = 0;
     this.driftK = 0.1;
