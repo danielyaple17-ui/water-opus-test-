@@ -3,6 +3,7 @@
 
 import { createContext, program, FULLSCREEN_VS, drawFullscreen } from './gl.js';
 import { ParticlePass } from './particles.js';
+import { SurfacePass } from './surface.js';
 
 // Procedural dark backplate: fine frosted-glass grain over a subtly brushed,
 // slightly blue-tinted dark panel. Computed in linear space, encoded to sRGB.
@@ -33,35 +34,24 @@ void main() {
   float aspect = uRes.x / uRes.y;
   vec2 p = vec2(vUv.x * aspect, vUv.y);
 
-  // Soft studio falloff from above.
-  float light = 0.004 + 0.010 * smoothstep(1.1, -0.2, length(p - vec2(0.5 * aspect, 0.95)));
-  // Frosted grain (screen-resolution) + larger cloudy variation + faint fine
-  // vertical brushing (high frequency so it never reads as banding).
+  // Out-of-focus studio back wall: light spilling from a softbox above the tank,
+  // a dim warm bokeh glow low on one side, and a mottled frosted-glass texture
+  // (medium-scale cloudiness + fine grain) that the water visibly bends.
+  vec2 c = vec2(0.5 * aspect, 1.05);
+  float spill = exp(-2.2 * length((p - c) * vec2(1.3, 1.0)));
+  float glow = exp(-9.0 * length(p - vec2(0.18 * aspect, 0.22)));
+  vec3 base = vec3(0.0035, 0.0045, 0.0055);
+  base += spill * vec3(0.050, 0.056, 0.062);
+  base += glow * vec3(0.020, 0.013, 0.008);
+  float cloud = fbm(p * vec2(9.0, 7.0));
+  float fine = fbm(p * 60.0);
   float grain = hash(px) - 0.5;
-  float cloud = fbm(p * 5.0);
-  float brushed = vnoise(vec2(px.x * 0.9, px.y * 0.012));
-  vec3 base = vec3(0.0045, 0.0058, 0.0070) * (0.75 + 0.5 * cloud) + light * vec3(0.8, 0.9, 1.0);
-  base *= 0.95 + 0.07 * brushed;
+  base *= 0.72 + 0.42 * cloud + 0.18 * (fine - 0.5);
   base *= 1.0 + grain * 0.10;
   // Vignette.
   vec2 q = vUv - 0.5;
-  base *= 1.0 - 0.55 * dot(q, q) * 2.0;
+  base *= 1.0 - 0.45 * dot(q, q) * 2.0;
   outColor = vec4(max(base, 0.0), 1.0);
-}`;
-
-// Composite: samples linear textures and encodes to sRGB for the default framebuffer.
-const COMPOSITE_FS = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 outColor;
-uniform sampler2D uBackplate;
-vec3 toSrgb(vec3 c) {
-  c = clamp(c, 0.0, 1.0);
-  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
-}
-void main() {
-  vec3 c = texture(uBackplate, vUv).rgb;
-  outColor = vec4(toSrgb(c), 1.0);
 }`;
 
 export class Renderer {
@@ -71,22 +61,34 @@ export class Renderer {
     this.renderScale = 1; // fraction of devicePixelRatio (quality levels change this)
     this.width = 1;
     this.height = 1;
-    this.passes = { backplate: true, particles: true };
+    // Render-pass switches (debug overlay toggles these).
+    this.passes = { backplate: true, water: true, blur: true, refraction: true, reflection: true, particles: false };
+    this.up = [0, 1]; // real-world up in GL screen space (from gravity)
     this.gl = createContext(
       canvas,
       () => { this.lost = true; },
-      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); },
+      () => { this.lost = false; this._init(); this.bpDirty = true; this.particles.restore(); this.surface.restore(); },
     );
     if (!this.gl) throw new Error('WebGL2 is not available on this device.');
     this._init();
     this.particles = new ParticlePass(this.gl);
+    this.surface = new SurfacePass(this.gl);
+  }
+
+  // Gravity in stage coords (y down) → world-up in GL screen coords (y up).
+  setGravity(gx, gy) {
+    const m = Math.hypot(gx, gy);
+    if (m > 0.5) { this.up[0] = -gx / m; this.up[1] = gy / m; }
   }
 
   _init() {
     const gl = this.gl;
     this.vao = gl.createVertexArray();
     this.backplate = program(gl, FULLSCREEN_VS, BACKPLATE_FS, 'backplate');
-    this.composite = program(gl, FULLSCREEN_VS, COMPOSITE_FS, 'composite');
+    // 1×1 black stand-in when the backplate pass is toggled off.
+    this.blackTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.blackTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
     this.bpTex = null;
     this.bpFbo = null;
     this.bpDirty = true;
@@ -128,6 +130,7 @@ export class Renderer {
       this.canvas.width = w;
       this.canvas.height = h;
       this.bpDirty = true;
+      this.surface.dpr = dpr;
     }
   }
 
@@ -135,19 +138,9 @@ export class Renderer {
     if (this.lost) return;
     const gl = this.gl;
     if (this.bpDirty) this._bakeBackplate();
-    gl.viewport(0, 0, this.width, this.height);
-    gl.bindVertexArray(this.vao);
-    if (this.passes.backplate) {
-      const { p, u } = this.composite;
-      gl.useProgram(p);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.bpTex);
-      gl.uniform1i(u.uBackplate, 0);
-      drawFullscreen(gl);
-    } else {
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-    }
+    // The water composite also draws the backplate (without water: a plain blit).
+    const back = this.passes.backplate ? this.bpTex : this.blackTex;
+    this.surface.render(this.particles, this.vao, back, this.width, this.height, this.up, this.passes);
     if (this.passes.particles) this.particles.draw(this.width);
   }
 }

@@ -303,10 +303,10 @@ export class FlipSim {
         y = y < h ? h : y > (ny - 1) * h ? (ny - 1) * h : y;
         const x0 = Math.min(Math.floor((x - offX) * invH), nx - 2);
         const tx = (x - offX - x0 * h) * invH;
-        const x1 = Math.min(x0 + 1, nx - 2);
+        const x1 = Math.min(x0 + 1, nx - 1);
         const y0 = Math.min(Math.floor((y - offY) * invH), ny - 2);
         const ty = (y - offY - y0 * h) * invH;
-        const y1 = Math.min(y0 + 1, ny - 2);
+        const y1 = Math.min(y0 + 1, ny - 1);
         const sx = 1 - tx, sy = 1 - ty;
         const d0 = sx * sy, d1 = tx * sy, d2 = tx * ty, d3 = sx * ty;
         const n0 = x0 * ny + y0, n1 = x1 * ny + y0, n2 = x1 * ny + y1, n3 = x0 * ny + y1;
@@ -341,10 +341,10 @@ export class FlipSim {
       y = y < h ? h : y > (ny - 1) * h ? (ny - 1) * h : y;
       const x0 = Math.floor((x - h2) * invH);
       const tx = (x - h2 - x0 * h) * invH;
-      const x1 = Math.min(x0 + 1, nx - 2);
+      const x1 = Math.min(x0 + 1, nx - 1);
       const y0 = Math.floor((y - h2) * invH);
       const ty = (y - h2 - y0 * h) * invH;
-      const y1 = Math.min(y0 + 1, ny - 2);
+      const y1 = Math.min(y0 + 1, ny - 1);
       const sx = 1 - tx, sy = 1 - ty;
       if (x0 < nx && y0 < ny) d[x0 * ny + y0] += sx * sy;
       if (x1 < nx && y0 < ny) d[x1 * ny + y0] += tx * sy;
@@ -568,10 +568,10 @@ export class FlipSim {
         y = y < h ? h : y > (ny - 1) * h ? (ny - 1) * h : y;
         const x0 = Math.min(Math.floor((x - offX) * invH), nx - 2);
         const tx = (x - offX - x0 * h) * invH;
-        const x1 = Math.min(x0 + 1, nx - 2);
+        const x1 = Math.min(x0 + 1, nx - 1);
         const y0 = Math.min(Math.floor((y - offY) * invH), ny - 2);
         const ty = (y - offY - y0 * h) * invH;
-        const y1 = Math.min(y0 + 1, ny - 2);
+        const y1 = Math.min(y0 + 1, ny - 1);
         const sx = 1 - tx, sy = 1 - ty;
         const d0 = sx * sy, d1 = tx * sy, d2 = tx * ty, d3 = sx * ty;
         const n0 = x0 * ny + y0, n1 = x1 * ny + y0, n2 = x1 * ny + y1, n3 = x0 * ny + y1;

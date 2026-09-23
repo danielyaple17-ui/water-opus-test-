@@ -6,7 +6,7 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [x] M1: Project setup, HTTPS dev server, full-screen WebGL2 canvas, start screen, motion permission, gravity vector shown on the debug overlay
 - [x] M2: Basic particle water (CPU/worker), walls, gravity from tilt, drawn as plain dots
 - [x] M3: Sloshing from shakes + swirl from spinning, tuned so it feels physically right
-- [ ] M4: Surface drawing (thickness, blur, normals) + refraction + Fresnel reflection
+- [x] M4: Surface drawing (thickness, blur, normals) + refraction + Fresnel reflection
 - [ ] M5: Color that deepens with thickness, glow through thin water, highlights, waterline
 - [ ] M6: Foam, bubbles, caustics
 - [ ] M7: Move the sim to the GPU (or optimize the worker until the budget is met); automatic quality levels
@@ -14,7 +14,7 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - [ ] M9: Hardening: context loss, pausing in the background, heat management, testing on real devices
 - [ ] M10: Final realism pass: side-by-side critique against reference footage, then fix the 3 weakest visual problems
 
-## Architecture (as of M3)
+## Architecture (as of M4)
 - `server/dev-server.mjs` – zero-dep HTTPS static server, self-signed cert (SANs: localhost + LAN IPs) auto-generated into `.cert/`. Sends COOP/COEP so SharedArrayBuffer is available for the sim worker.
 - `index.html`, `manifest.webmanifest`, `icons/` – full-screen PWA meta (apple-mobile-web-app-capable, viewport-fit=cover, display: fullscreen, orientation: portrait).
 - `ui/stage.js` – `#stage` is always device-portrait. Android locks orientation; on iOS the stage is CSS counter-rotated when the viewport rotates, so sensor axes map 1:1 to stage axes.
@@ -35,11 +35,16 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   - Diagnostics: `fluidCells`, `fillVolume` = Σ min(ρ/ρ0, 1) (the volume metric used for pass/fail).
 - `sim/worker.js` + `sim/client.js` – worker also reports water centre of mass and angular momentum (verification). module worker owns sim + clock; main posts {dt, g, a, spin, free buffer}, worker returns x,y (tank-normalised), vx,vy as a transferred Float32Array. Two ArrayBuffers ping-pong; one request in flight.
 - `src/main.js`: `?cells=N` overrides the grid resolution (16–256; default 84).
-- `render/particles.js` – plain GL_POINTS dots coloured by speed (M2 debug view; replaced by surface rendering in M4).
+- `render/particles.js` – GL_POINTS dots coloured by speed (debug view, `particles` pass; its VBO feeds the surface splat).
+- `render/surface.js` (M4) – screen-space water:
+  1. Thickness: Gaussian point splats (radius 4.4 r), additive into an R16F target at 0.5× canvas (RGBA8 fallback if float targets are unavailable), normalised by the analytic hex-lattice kernel sum so bulk ≈ 1. Particle domain [r, 1−r] is stretched onto the screen, and near-wall particles are also splatted mirrored across each wall (5 instances) so the water meets the glass.
+  2. Bilateral blur: separable, σs = 5 texels, σr = 0.4, 2 H+V passes (`sigmaS`, `sigmaR`, `blurPasses`).
+  3. Composite: **level-set edge**. The blurred field's 0.5 iso-line is the liquid boundary. Signed distance d = (T − 0.5)/|∇T| (T saturated at 1 so bulk density variation can't tilt normals) drives a crisp AA mask and a circular edge profile of width `rimCss` = 5 CSS px for the normal. Refraction of the backplate along n.xy × thickness with ±3% per-channel dispersion, Beer–Lambert transmittance, Schlick Fresnel (F0 0.02) reflection of a procedural studio (overhead softbox, side strips, key) that stays aligned to real-world up from gravity. Separate cheap blit when water is off.
+- `render/renderer.js` – backplate redesigned in M4 (out-of-focus softbox spill from above, dim warm bokeh glow, mottled frosted texture + grain) so refraction is readable. Passes: backplate, water, blur, refraction, reflection, particles.
 - `render/` – WebGL2 context (context-loss listeners), shader helpers with cached uniform locations, backplate baked once per resize into an SRGB8_ALPHA8 texture (future refraction source), linear→sRGB composite.
 - `ui/debug.js` – triple-tap any corner (or `D`): fps, frame avg/max, CPU ms, particles, quality, render px, input source/permission, gravity, tank accel, spin, gravity compass, per-pass toggles, sensor-sign toggle.
 - `ui/stats.js` – ring-buffer frame stats (no per-frame allocation).
-- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`, `m2.mjs`, `m3.mjs`, `make-icons.mjs`.
+- `verify/` – `lib.mjs` (Playwright + server + synthetic DeviceMotion streaming), `m1.mjs`…`m4.mjs`, `tune-surface.mjs` (renders a frozen scene under several surface parameter sets into `verify/tune/`, git-ignored), `make-icons.mjs`.
 
 ## Measurements
 ### M1 (2026-09-22) – headless Chromium, SwiftShader (software GL), 390×844 @2x
@@ -72,15 +77,26 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 - Node, 84 cells: tilt-release slosh period 0.31 s vs linear theory 2π/√(gk·tanh(kd)) = 0.30 s for this 6.9 cm × 6.8 cm-deep tank; envelope decays ≈3× in 5 s (ν = 2e-5). Jerk at 84 cells: 53% of the water in the left quarter at 0.1 s, left wall run-up to the ceiling, settles in ≈0.7 s (wave breaking). Flat spin to 2π rad/s: relative angular momentum −46% of rigid counter-rotation during spin-up, then centrifugal pinning into the corners makes it co-rotate (correct for a partly-filled rectangular box). Zero-g square blob rounds to a disk in ≈1 s at σ_eff = 0.002–0.005 (max/mean radius 1.83 → 1.55; disk = 1.5); stable up to 0.072 but ≥0.02 throws spray.
 - Visual (honest): motion is convincing and energetic: overturning waves, run-up, lagging swirl. Still dots, so no realism judgement until M4. The surface stays ragged by ~1 particle at rest, and the airborne spray is sparse single dots.
 
+### M4 (2026-09-23) – headless Chromium + SwiftShader, 390×844 @2x, 84 cells (21,684 particles)
+- `node verify/m4.mjs` → pass, 0 console errors. Screenshots `verify/M4/`: poses 01–07 with the surface on, plus 09 dots-only, 10 no-blur, 11 no-refraction, 12 no-reflection, 13 overlay. Render target: R16F float, 390×844 thickness buffer.
+- Volume: 21,684 particles constant, 0 outside in every phase; grid fill settled 6635.0 → 6659.5 (**+0.37%**), worst transient 2.2% (mid-shake).
+- Frame time: **not measurable here**: SwiftShader takes 480–650 ms/frame with the surface pipeline at 780×1688 (and jumps around by ±100 ms between runs). To keep the sim meaningful, the test simulates with the water pass off and switches it on only for screenshots. Analytic GPU load at iPhone-13 native res (1170×2532, thickness at 585×1266): splat ≈ 21.7k × ~450 px, blur 4 × 21 taps × 0.74 M texels ≈ 62 M fetches, composite 2.96 M px × 8 fetches ≈ 24 M. That's well inside an A15's budget (estimate ~1.5–3 ms), but it **must be measured on a device** (M7/M9).
+- Sim fix found via rendering: P2G/density/G2P clamped the upper interpolation index to n−2, so right-wall cells got the wall's weight and left-wall cells lost it. That left a sparse, fizzy strip only at the left wall (visible in M2 dots, and as edge marks once surface-rendered). Now clamped to n−1: wall strips 148/133 particles vs ~130 interior, calm rms 0.015 m/s. Deterministic jerk test unchanged (54% of water in left quarter at 0.1 s). `verify/m3.mjs` re-run: pass (jerk CoM 0.362, fill +0.18%); it now renders dots so SwiftShader keeps ~0.7× real time.
+- Iterations: (1) thickness-as-height normals with light blur gave a wobbly "pencil line" surface; (2) heavy blur smoothed the shape but flattened the edge slope (no rim, fuzzy edge); (3) the level-set edge decouples shape smoothing from edge sharpness and fixed both; (4) saturating T before the gradient removed dashes along the walls.
+- Visual (honest, vs the macro-photo benchmark): now reads as *liquid*, with smooth, rounded, lens-rimmed tongues and drops, a crisp antialiased silhouette, and a softbox glint on edges facing world-up. **Not** photoreal yet: the body is a flat dark teal barely separated from the backplate, the rim is a thin grey line that breaks into dashes where the reflection misses the lights, the waterline shows a small stair-step ripple (~20 px) from particle-scale noise, and there's no depth colour, glow, foam or caustics (M5/M6).
+
 ## Known Issues (priority order)
 1. **Sim step cost ≈ 11–15 ms on this VM (budget 8.3 ms/step at 120 Hz, one worker core).** Needs a real-device measurement; M7 owns the fix (GPU port or worker optimisation + quality levels picking cellsX/particle count from measured step time). Cheap wins already identified: separation every other step, 2 V-cycles when calm, SIMD-friendly SoA loops.
-2. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 thickness blur must hide it; if not, try implicit surface tension or particle-level cohesion.
-3. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
-4b. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
-4. Wall gap: particles are clamped one radius (0.25 mm) off the walls, so the dot view shows a thin strip. The M4 surface renderer must extend the fluid to the glass (and M8 adds the meniscus).
-5. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
-6. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
-7. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
-8. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
+2. Waterline stair-step ripple (~20 CSS px wavelength, 1–2 px amplitude) from particle-scale surface noise survives the σs=5 blur. Options: stronger surface tension, surface-aligned (anisotropic) smoothing of the level set, or ellipsoid splats (Yu & Turk).
+3. Rim/meniscus is a thin dashed grey line (reflection only catches lights on part of the edge). M5 "bright edge line along the waterline" should replace it with a proper meniscus highlight.
+4. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
+5. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
+6. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
+7. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
+8. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
+9. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
+10. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
+11. Per-frame `postMessage` structured-clones a small stats object in the worker (tiny allocation per frame). Move to SharedArrayBuffer stats when crossOriginIsolated (M7).
+12. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
 
-NEXT: M4 – screen-space surface: splat particles as soft blobs into a half-float thickness/depth buffer, edge-aware (bilateral) blur, normals from the blurred field, refraction of the backplate + Fresnel reflection of a procedural studio env; verify screenshots vs benchmark + frame time + volume.
+NEXT: M5 – water colour: thickness/depth-based blue-green absorption + in-scatter, faint glow through thin sheets and crests, bright specular highlights, and a proper bright waterline/meniscus line (fixes Known Issue 2c); verify poses + pass toggles + volume.

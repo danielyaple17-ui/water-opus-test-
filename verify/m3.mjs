@@ -25,6 +25,10 @@ try {
   await page.goto(`${server.url}?cells=${CELLS}`);
   await page.waitForTimeout(500);
   await page.click('#start');
+  // Physics test: render the cheap dot view so SwiftShader keeps ~real-time (the M4
+  // surface passes drop it to ~8 fps, which would slow the sim ~8x vs the wall-clock sensors).
+  const dots = (pg) => pg.evaluate(() => Object.assign(window.__water.renderer.passes, { water: false, particles: true }));
+  await dots(page);
 
   // Sensor generator: window.__mode picks a function of wall time since the mode began.
   await page.evaluate((G) => {
@@ -137,6 +141,7 @@ try {
   await dp.goto(`${server.url}?cells=${CELLS}`);
   await dp.mouse.move(250, 880);
   await dp.mouse.click(250, 450);
+  await dots(dp);
   await dp.mouse.move(250, 880);
   await dp.waitForFunction(() => window.__water.sim.stats && window.__water.sim.stats.simTime > 2.0, null, { timeout: 60000 });
   const c0 = await dp.evaluate(() => window.__water.sim.stats.comX);

@@ -76,6 +76,7 @@ function frame(now) {
   motion.update(dt);
   if (state.started) {
     sim.update(dt, motion);
+    renderer.setGravity(motion.gx, motion.gy);
     renderer.particles.radius = sim.radius;
   }
   renderer.render();
