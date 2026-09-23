@@ -266,4 +266,4 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
 13. After a two-finger reset (re-pour), foam generation stays at the weak 1/220 for 8 s (`sepBoost`), so a hard shake right after a reset gives less whitewater. Gate on pour state + measured packing noise instead of the timer if it matters.
 14. Residual floor twitch: after the FLIP/drift fix, calm water still shows isolated one-second rms blips up to ~0.05–0.06 (baseline 0.018). Invisible in renders so far; the next lever would be a density-drift correction that ramps in over a few steps instead of acting at full strength once over the band.
 
-NEXT: Known Issue 1: cut the worst-case (hard-shake) sim step on High to ≤ ~6.5 ms on the iPhone (≈ ≤ 25 ms on this VM's contended worker ≈ scale factor from the bench) without losing the look; re-bench on the device.
+NEXT: Known Issue 1: cut the worst-case (hard-shake) sim step on High to ≤ ~6.5 ms on the iPhone (measure relative step-cost reductions in Node; only the device can confirm the absolute number) without losing the look; re-bench on the device.
