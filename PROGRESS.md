@@ -180,22 +180,28 @@ Phone-as-a-water-tank: real-time 2D FLIP water in WebGL2, driven by DeviceMotion
   - Frame (SwiftShader, not representative): avg 207 ms, worst 1250 ms; worker 15.8 ms/step. GPU cost: 4 texture taps on rim pixels only.
 - Visual (honest): on the same frozen frames the old lit crests show a chain of 4–6 separate sparkles; the new ones show one continuous hairline with a single hot spot, which reads like a real studio highlight. Around small air pockets the scattered sparkles become one glint. Remaining nit: the hot spot is still a few pixels wide and slightly square at 4× zoom (invisible at 1×).
 
+### Known Issue: pour inlet block (2026-09-23, after M10)
+- Change (`sim/flip.js` `_pour`): the inlet moved from 2.5 cells below the glass to 0.6 cells (flush with the top edge), and the stream is faster and narrower: 0.6 m/s × 5.25 mm instead of 0.35 m/s × 9 mm, the same flow rate, so pour time and volume are unchanged.
+- Node check (deterministic, 84 cells): pour completes in 1.46 s, 0 outside, settled fill **+0.21%** vs a pre-filled tank.
+- `node verify/pour.mjs` → pass, 0 console errors. Screenshots `verify/pour/`: pour at 0.15/0.3/0.5/0.8/1.2/2 s, then calm, tilt L/R, upside-down, hard shake, resettled. Volume: particles constant, 0 outside, fill 6605.9 → 6569.3 (**−0.55%**, 3 s means). Frame (SwiftShader): avg 185 ms, worst 1050 ms; worker 21.7 ms/step.
+- Visual (honest): the square-cornered block is gone. The pour is now one continuous, gently wavy column from the top of the frame down to a plunge crater that entrains an air pocket and bubbles, which is the most photographic moment in the app. Nit: the stream visibly starts ~15 CSS px below the top edge with a tiny drip sitting at the glass, rather than reading as coming from off-screen.
+
 ## Known Issues (priority order)
 1. **Needs a real device (user action): run `?bench=1` on an iPhone 13+ per `docs/DEVICE_TESTING.md` and paste the JSON here; also confirm the sensor sign.** The Definition of Done (60 fps at High) can't be confirmed without it. **Device performance unmeasured.** This VM runs High at 10.7 ms calm / 27 ms violent shake per step. The quality controller keeps the budget by downgrading, but whether an iPhone 13 holds High needs a real device (M9). Remaining sim hot spots: separation 3.6 ms (2 passes), MG 2.3 ms/solve, G2P 1.2 ms. Next levers: separation once per step when calm, SIMD/WASM for P2G/G2P, or a GPU port.
-2. Pour nozzle appears as a square-cornered block at the top during the first ~0.5 s of the pour. Emit from a rounded/narrower inlet, or keep the inlet just off-screen.
-3. Violent impacts never produce dense, opaque whitewater: foam is now sparse bubbles plus a faint haze. Consider a denser sprite mode (more bubbles per particle) when foam > 0.8, or a stronger haze gated by very high foam only.
-4. Caustic web is too prominent inside thin splash tongues: it reads as bright veins (`verify/glint/zoom-06-hard-shake.png`). Scale caustic strength by the depth field B (fade out in thin water, where there is no focal distance) or by distance to the back wall.
-5. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
-6. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
-7. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
-8. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
-9. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
-10. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
-11. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
-12. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
-13. Per-frame buffer transfer still counts ~60–75 KB/frame of external-memory churn on the main thread (moved, not copied). Zero-message alternative: SharedArrayBuffer double buffer + Atomics.waitAsync when `crossOriginIsolated` (the dev server sends COOP/COEP; production hosting must too), keeping transfers as the fallback.
-14. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
-15. `verify/tune-surface.mjs` hangs (no timeout) when a shader fails to compile, e.g. the GLSL ES reserved word `patch` hit in M10. Add a sim-stall timeout and surface `program()` errors.
-16. Grid-fill metric is noisy while settling (single 0.2 s readings swing up to ±2.5%); verify scripts must average ≥3 s. Consider measuring fill only on cells away from the free surface.
+2. Violent impacts never produce dense, opaque whitewater: foam is now sparse bubbles plus a faint haze. Consider a denser sprite mode (more bubbles per particle) when foam > 0.8, or a stronger haze gated by very high foam only.
+3. Caustic web is too prominent inside thin splash tongues: it reads as bright veins (`verify/glint/zoom-06-hard-shake.png`). Scale caustic strength by the depth field B (fade out in thin water, where there is no focal distance) or by distance to the back wall.
+4. 104-cell grid is noisy at rest (rms 0.15 m/s vs 0.03 at 84), probably viscosity/drift/CFL constants tuned for 84. Until fixed, Ultra uses 84 cells.
+5. Fluffy/ragged free surface (~1 particle) remains after adding surface tension (σ_eff is capped by explicit stability). The M4 level-set blur hides most of it (see 2b).
+6. Residual particle noise ≈0.02–0.07 m/s at rest (FLIP sampling noise), plus a thin fizzy layer against the loaded wall. Invisible once surface-rendered; check again in M4.
+7. `verify/m3.mjs` jerk check is timing-sensitive (CoM min 0.36–0.43 across runs vs threshold 0.42) because the 100 ms pulse is wall-clock and the headless event loop is loaded. Drive the pulse in sim time.
+8. Sim speed at 84 cells can't be exercised in real time headlessly; dynamic checks run at 48 cells. Re-check the feel at 84+ cells on a device (M9).
+9. Sensor sign convention is unverified on real iOS/Android hardware (older WebKit inverted `accelerationIncludingGravity`). Debug overlay has an "invert sensor sign" toggle (persisted). Confirm on device in M9.
+10. Headless frame timings are software-GL bound; need a real-GPU metric (device test, or `EXT_disjoint_timer_query_webgl2` where available) before perf budgets can be trusted.
+11. Self-signed cert: iOS Safari shows a warning page; for PWA install on iOS a trusted cert (mkcert root installed on the phone, or a tunnel) is needed.
+12. Per-frame buffer transfer still counts ~60–75 KB/frame of external-memory churn on the main thread (moved, not copied). Zero-message alternative: SharedArrayBuffer double buffer + Atomics.waitAsync when `crossOriginIsolated` (the dev server sends COOP/COEP; production hosting must too), keeping transfers as the fallback.
+13. (Fixed in M4 render) Wall gap: surface splat stretches [r, 1−r] to the screen and mirrors near-wall particles; the dot view still shows the gap (debug only). M8 adds the meniscus curve.
+14. `verify/tune-surface.mjs` hangs (no timeout) when a shader fails to compile, e.g. the GLSL ES reserved word `patch` hit in M10. Add a sim-stall timeout and surface `program()` errors.
+15. Grid-fill metric is noisy while settling (single 0.2 s readings swing up to ±2.5%); verify scripts must average ≥3 s. Consider measuring fill only on cells away from the free surface.
+16. Pour stream starts ~15 CSS px below the top edge (small drip at the glass) instead of reading as entering from off-screen. Option: stretch the thickness splat's top mirror band for the inlet, or emit a few cells further up with the wall clamp relaxed at the inlet.
 
-NEXT: DoD still gated on Known Issue 1 (real-device bench, user action). Meanwhile fix Known Issue 2: pour nozzle shows as a square-cornered block at the top during the first ~0.5 s (rounded/narrower inlet, or emit just off-screen).
+NEXT: DoD still gated on Known Issue 1 (real-device bench, user action). Meanwhile fix Known Issue 2: dense, opaque whitewater at violent impacts (denser foam sprites / stronger haze gated by very high foam only).

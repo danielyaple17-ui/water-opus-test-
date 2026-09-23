@@ -1,0 +1,73 @@
+{
+  "poses": {
+    "03-tilt-left": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6577.7,
+      "activity": 0.051,
+      "stepMs": 16.76,
+      "simTime": 10.33,
+      "frameAvg": 181.7,
+      "frameMax": 1516.6
+    },
+    "04-tilt-right": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6545.6,
+      "activity": 0.076,
+      "stepMs": 16.64,
+      "simTime": 12.33,
+      "frameAvg": 170,
+      "frameMax": 2683.2
+    },
+    "05-upside-down": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6516.9,
+      "activity": 0.067,
+      "stepMs": 24.07,
+      "simTime": 14.83,
+      "frameAvg": 175.3,
+      "frameMax": 1849.9
+    },
+    "06-hard-shake": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6407.5,
+      "activity": 0.22,
+      "stepMs": 33.77,
+      "simTime": 16.83,
+      "frameAvg": 179.2,
+      "frameMax": 1783.3
+    },
+    "07-resettled": {
+      "particles": 21684,
+      "outside": 0,
+      "fill": 6622.2,
+      "activity": 0.025,
+      "stepMs": 14.33,
+      "simTime": 22.83,
+      "frameAvg": 173.2,
+      "frameMax": 1833.3
+    }
+  },
+  "volume": {
+    "neverOutside": true,
+    "particlesConstant": true,
+    "fillStart": 6605.9,
+    "fillEnd": 6569.3,
+    "fillChangePct": -0.55
+  },
+  "frame": {
+    "particles": 21684,
+    "outside": 0,
+    "fill": 6512.1,
+    "activity": 0.07,
+    "stepMs": 21.7,
+    "simTime": 26.37,
+    "frameAvg": 185.2,
+    "frameMax": 1050
+  },
+  "consoleErrors": [],
+  "pass": true
+}
