@@ -17,6 +17,7 @@ let bubbles = null;
 const clock = new FixedStep(120, 4);
 const input = { gx: 0, gy: 9.81, ax: 0, ay: 0, spin: 0, alpha: 0, prevSpin: 0 };
 let gen = 0; // bumps on init/resample so the host can drop stale buffers
+let goal = null; // game: goal rect [u0, v0, u1, v1] in tank-interior coords
 const stats = {
   steps: 0, stepMs: 0, stepMsMax: 0, simTime: 0,
   outside: 0, comX: 0.5, comY: 0.5, angMom: 0, activity: 0, foamSum: 0,
@@ -36,7 +37,8 @@ function writeOut(out) {
   const minX = h, maxX = (sim.nx - 1) * h, minY = h, maxY = (sim.ny - 1) * h;
   const cx = 0.5 * sim.width, cy = 0.5 * sim.height;
   const foam = sim.foam, seed = sim.seed, fresh = sim.fresh;
-  let outside = 0, sx = 0, sy = 0, L = 0, e = 0, fs = 0;
+  let outside = 0, sx = 0, sy = 0, L = 0, e = 0, fs = 0, inGoal = 0;
+  const g0 = goal ? goal[0] : 2, g1 = goal ? goal[1] : 2, g2 = goal ? goal[2] : -1, g3 = goal ? goal[3] : -1;
   for (let i = 0; i < n; i++) {
     const x = pos[2 * i], y = pos[2 * i + 1];
     if (!(x >= minX && x <= maxX && y >= minY && y <= maxY)) outside++;
@@ -44,8 +46,10 @@ function writeOut(out) {
     // Angular momentum about the tank centre, + = clockwise on screen (y down).
     L += (x - cx) * vel[2 * i + 1] - (y - cy) * vel[2 * i];
     const o = LY.HEADER + 4 * i;
-    out[o] = (x - h) * invW;
-    out[o + 1] = (y - h) * invH;
+    const u = (x - h) * invW, v = (y - h) * invH;
+    out[o] = u;
+    out[o + 1] = v;
+    if (u >= g0 && u <= g2 && v >= g1 && v <= g3) inGoal++;
     const vx = vel[2 * i], vy = vel[2 * i + 1];
     const sp2 = vx * vx + vy * vy;
     e += sp2;
@@ -92,6 +96,7 @@ function writeOut(out) {
   out[LY.S_POUR] = sim.pourRemaining;
   out[LY.S_STEPS] = stats.steps;
   out[LY.S_GEN] = gen;
+  out[LY.S_GOAL] = inGoal;
 }
 
 self.onmessage = (e) => {
@@ -100,6 +105,7 @@ self.onmessage = (e) => {
   if (m.type === 'init' || m.type === 'resample') {
     // 'resample' changes resolution (quality level) and keeps the water.
     sim = m.type === 'resample' && sim ? FlipSim.resampleFrom(sim, m.opts) : new FlipSim(m.opts);
+    goal = m.opts.goal || null;
     bubbles = new Bubbles(sim);
     clock.reset();
     gen++;

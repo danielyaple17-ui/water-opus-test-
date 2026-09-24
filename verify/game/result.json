@@ -1,0 +1,75 @@
+{
+  "checks": {
+    "level1": {
+      "s0": {
+        "count": 2736,
+        "goal": 0,
+        "outside": 0,
+        "fill": 816.5,
+        "hud": true,
+        "name": "Tip it",
+        "fillBar": "0%",
+        "win": false,
+        "stars": "",
+        "slabs": 1
+      },
+      "s1": {
+        "count": 2736,
+        "goal": 1228,
+        "outside": 0,
+        "fill": 812.9,
+        "hud": true,
+        "name": "Tip it",
+        "fillBar": "38.6%",
+        "win": true,
+        "stars": "★☆☆",
+        "slabs": 1
+      },
+      "s2": {
+        "count": 2736,
+        "goal": 1237,
+        "outside": 0,
+        "fill": 814.2,
+        "hud": true,
+        "name": "Tip it",
+        "fillBar": "38.6%",
+        "win": true,
+        "stars": "★☆☆",
+        "slabs": 1
+      },
+      "pass": true
+    },
+    "level2": {
+      "count": 1476,
+      "goal": 0,
+      "outside": 0,
+      "fill": 440,
+      "hud": true,
+      "name": "Off the shelf",
+      "fillBar": "0%",
+      "win": false,
+      "stars": "★☆☆",
+      "slabs": 3,
+      "pass": true
+    },
+    "background": {
+      "style": "photo",
+      "photoBytes": 15135,
+      "pass": true
+    },
+    "progress": {
+      "saved": "{\"unlocked\":1,\"stars\":[1]}",
+      "pass": true
+    },
+    "reload": {
+      "sub": "Level 2 · Off the shelf",
+      "pass": true
+    }
+  },
+  "startLabel": "Tap to play",
+  "startSub": "Level 1 · Tip it",
+  "photoStatus": "Photo set",
+  "afterReloadSub": "Level 2 · Off the shelf",
+  "consoleErrors": [],
+  "pass": true
+}

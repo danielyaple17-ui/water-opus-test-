@@ -10,6 +10,9 @@ import { HEADER } from '../sim/layout.js';
 import { QualityController, LEVELS } from './quality.js';
 import { TouchGestures } from '../ui/touch.js';
 import { Bench } from '../ui/bench.js';
+import { Game } from '../ui/game.js';
+import { BackgroundPicker } from '../ui/background.js';
+import { buildLevels } from './levels.js';
 
 const $ = (id) => document.getElementById(id);
 const stageEl = $('stage');
@@ -82,14 +85,65 @@ const sim = new SimClient((data, count, bubbles) => {
 });
 debug.sim = sim;
 
-function initSim() {
+// Mode: the tilt-to-pour game, or free water (the original sandbox). Test and
+// benchmark URLs (`pour`, `bench`, `q`, `cells`) and `?mode=free` open free water.
+let mode = params.get('mode') === 'free' || ['pour', 'bench', 'q', 'cells'].some((k) => params.has(k)) ? 'free' : 'game';
+
+function initSim(level = null) {
   const aspect = stage.width / stage.height;
-  // The water pours in from the top and settles (`?pour=0` starts full: tests).
-  sim.init({
-    worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: cellsFor(quality.level), fill: 0.45,
-    pour: params.get('pour') !== '0',
-  });
+  const base = { worldWidth: TANK_HEIGHT_M * aspect, worldHeight: TANK_HEIGHT_M, cellsX: cellsFor(quality.level) };
+  if (level) {
+    sim.init({ ...base, water: level.water, solids: level.solids, goal: level.goal, pour: false });
+  } else {
+    // The water pours in from the top and settles (`?pour=0` starts full: tests).
+    sim.init({ ...base, fill: 0.45, pour: params.get('pour') !== '0' });
+  }
+  levelKey = '';
 }
+
+// ---- game ----------------------------------------------------------------
+const levels = buildLevels(stage.width / stage.height);
+let levelKey = ''; // which level/grid the obstacle drawing was snapped to
+const game = new Game(levels, {
+  hud: $('hud'), level: $('hud-level'), name: $('hud-name'), fill: $('hud-fill'), target: $('hud-target'), hint: $('hud-hint'),
+  win: $('win'), winTitle: $('win-title'), winStars: $('win-stars'), winTime: $('win-time'),
+  next: $('win-next'), replay: $('win-replay'), menu: $('hud-menu'), list: $('levels'), listBody: $('levels-body'), listClose: $('levels-close'),
+}, {
+  onLoad: (level) => { setMode('game'); initSim(level); },
+});
+const bgPicker = new BackgroundPicker($('bgsheet'), renderer);
+
+function setMode(m) {
+  mode = m;
+  $('free-exit').hidden = !(state.started && m === 'free');
+  if (m === 'free') { game.hide(); renderer.level.set(null); }
+}
+function startFree() {
+  setMode('free');
+  initSim();
+}
+// Keep the obstacle drawing snapped to the current grid (quality changes resample it).
+function syncLevel() {
+  if (mode !== 'game' || !game.level || !sim.ready) return;
+  const key = `${game.index}:${sim.cellsX}x${sim.cellsY}`;
+  if (key !== levelKey) {
+    levelKey = key;
+    renderer.level.set(game.level, sim.cellsX, sim.cellsY, sim.radius, stage.width / stage.height);
+  }
+  if (!game.ready && sim.frames > 0) game.ready = true;
+}
+const stopTap = (e) => e.stopPropagation();
+for (const id of ['start-free', 'start-bg', 'free-exit']) {
+  $(id).addEventListener('pointerdown', stopTap);
+}
+$('start-bg').addEventListener('click', (e) => { e.stopPropagation(); bgPicker.show(true); });
+$('hud-bg').addEventListener('click', () => bgPicker.show(true));
+$('free-exit').addEventListener('click', (e) => { e.stopPropagation(); game.showList(true); });
+$('free-mode').addEventListener('click', () => { $('levels').hidden = true; startFree(); });
+$('levels').querySelector('.card').insertAdjacentHTML('beforeend', '<button id="levels-bg" class="link-btn" type="button">Background</button>');
+$('levels-bg').addEventListener('click', () => { $('levels').hidden = true; bgPicker.show(true); });
+startSub.textContent = mode === 'game' ? `Level ${game.index + 1} · ${game.current.name}` : '';
+if (mode === 'free') $('start').querySelector('.start-label').textContent = 'Tap to fill';
 
 let last = 0;
 let bench = null; // ?bench=1: on-device benchmark (ui/bench.js)
@@ -105,6 +159,8 @@ function frame(now) {
   if (state.started && bench) bench.tick(dt);
   if (state.started) {
     sim.update(dt, motion);
+    syncLevel();
+    if (mode === 'game' && sim.stats) game.update(dt, sim.stats.goal, sim.stats.count);
     renderer.setGravity(motion.gx, motion.gy);
     renderer.setTime(now * 0.001, sim.stats ? sim.stats.activity : 0);
     quality.update(dt, sim.stats ? sim.stats.simTime : -1);
@@ -117,8 +173,9 @@ function frame(now) {
 }
 
 // ---- start screen -------------------------------------------------------
-async function start() {
+async function start(e) {
   if (state.started) return;
+  if (e && e.currentTarget === $('start-free')) mode = 'free';
   // requestPermission must be the first await inside the gesture handler on iOS.
   const perm = await motion.requestPermission();
   motion.attach();
@@ -128,11 +185,12 @@ async function start() {
   if (perm === 'denied') {
     startSub.textContent = 'Motion access denied — using touch & mouse';
   }
-  initSim();
+  state.started = true;
+  if (mode === 'game' && !params.has('bench')) game.start(game.index);
+  else startFree();
   if (params.get('bench') === '1') {
     bench = new Bench({ quality, sim, motion, overlay: debug, seconds: Number(params.get('benchSec')) || 8 });
   }
-  state.started = true;
   startEl.classList.add('hide');
   // No sensor data after a moment on a touch device (denied, unsupported, or a
   // frame that blocks motion): say how to move the water by hand, briefly.
@@ -147,6 +205,8 @@ async function start() {
   }
 }
 startEl.addEventListener('click', start);
+// "Free water" on the start screen: same permission gesture, sandbox mode.
+$('start-free').addEventListener('click', (e) => { e.stopPropagation(); start(e); });
 
 // ---- lifecycle ----------------------------------------------------------
 // Hidden tab / app switch / bfcache: stop simulating and drawing entirely (the
@@ -196,7 +256,7 @@ if (navigator.getBattery) {
 // Tap = splash ripple, two-finger tap (or R) = empty and pour again.
 new TouchGestures(stageEl, stage, {
   onTap: (x, y) => { if (state.started) sim.impulse(x, y); },
-  onReset: () => { if (state.started) initSim(); },
+  onReset: () => { if (!state.started) return; if (mode === 'game') game.restart(); else initSim(); },
   frames: () => stats.totalFrames,
 });
 window.addEventListener('keydown', (e) => {
