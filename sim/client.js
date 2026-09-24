@@ -21,7 +21,7 @@ export class SimClient {
     this.stats = null; // set on the first frame
     this._stats = {
       count: 0, bubbles: 0, simTime: 0, stepMs: 0, stepMsMax: 0, substeps: 1, fluidCells: 0, fillVolume: 0,
-      outside: 0, comX: 0.5, comY: 0.5, angMom: 0, activity: 0, foamSum: 0, maxSpeed: 0, pourRemaining: 0, steps: 0,
+      outside: 0, comX: 0.5, comY: 0.5, angMom: 0, activity: 0, foamSum: 0, maxSpeed: 0, pourRemaining: 0, steps: 0, goal: 0,
     };
     this.gen = -1;
     this.free = []; // ArrayBuffers available to send
@@ -63,6 +63,7 @@ export class SimClient {
       this.free.push(new ArrayBuffer(bytes), new ArrayBuffer(bytes));
       this.ready = true;
       this.busy = false;
+      this.frames = 0; // frames received for this init/resample
       return;
     }
   }
@@ -77,7 +78,9 @@ export class SimClient {
     s.fluidCells = io[LY.S_FLUID]; s.fillVolume = io[LY.S_FILL]; s.outside = io[LY.S_OUTSIDE];
     s.comX = io[LY.S_COMX]; s.comY = io[LY.S_COMY]; s.angMom = io[LY.S_ANGMOM]; s.activity = io[LY.S_ACTIVITY];
     s.foamSum = io[LY.S_FOAMSUM]; s.maxSpeed = io[LY.S_MAXSPEED]; s.pourRemaining = io[LY.S_POUR]; s.steps = io[LY.S_STEPS];
+    s.goal = io[LY.S_GOAL];
     this.stats = s;
+    this.frames = (this.frames | 0) + 1;
     this.onFrame(io, s.count, s.bubbles);
     this.free.push(buf);
   }

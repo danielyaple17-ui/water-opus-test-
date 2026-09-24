@@ -70,28 +70,55 @@ export class FlipSim {
         this.s[i * this.ny + j] = wall ? 0 : 1;
       }
     }
+    // Level obstacles (game): rects in tank-interior coords [0,1] (x right,
+    // y down). A cell is solid when its centre lies inside one.
+    const interiorW = (this.nx - 2) * h;
+    const interiorH = (this.ny - 2) * h;
+    const toU = (x) => (x - h) / interiorW, toV = (y) => (y - h) / interiorH;
+    const inRects = (rects, u, v) => {
+      for (const q of rects) if (u >= q[0] && u <= q[2] && v >= q[1] && v <= q[3]) return true;
+      return false;
+    };
+    const solids = opts.solids || [];
+    this.hasSolids = solids.length > 0;
+    for (let i = 1; i < this.nx - 1; i++) {
+      for (let j = 1; j < this.ny - 1; j++) {
+        if (inRects(solids, toU((i + 0.5) * h), toV((j + 0.5) * h))) this.s[i * this.ny + j] = 0;
+      }
+    }
 
-    // Particles: hex-packed block filling the bottom `fill` of the tank.
+    // Particles: a hex lattice over the interior, kept where the water starts:
+    // the bottom `fill` of the tank, or the level's `water` rects (outside solids).
     const r = 0.3 * h;
     this.r = r;
     const dx = 2 * r;
     const dy = (Math.sqrt(3) / 2) * dx;
-    const interiorW = (this.nx - 2) * h;
-    const interiorH = (this.ny - 2) * h;
+    const water = opts.water || null;
     const cols = Math.floor((interiorW - 2 * r) / dx);
-    const rows = Math.floor((interiorH * fill - 2 * r) / dy);
-    const count = cols * rows;
+    const rows = water ? Math.floor((interiorH - 2 * r) / dy) + 1 : Math.floor((interiorH * fill - 2 * r) / dy);
+    const bottom = (this.ny - 1) * h - r;
+    const left = h + r + 0.5 * (interiorW - 2 * r - (cols - 0.5) * dx);
+    const keep = (x, y) => {
+      if (!water) return true;
+      if (!inRects(water, toU(x), toV(y))) return false;
+      const c = Math.floor(x / h) * this.ny + Math.floor(y / h);
+      return this.s[c] !== 0;
+    };
+    let count = 0;
+    for (let row = 0; row < rows; row++) {
+      for (let c = 0; c < cols; c++) if (keep(left + dx * c + (row % 2 === 0 ? 0 : r), bottom - dy * row)) count++;
+    }
     this.capacity = count; // arrays are sized for the full volume
     this.numParticles = count;
     this.pos = new Float32Array(2 * count);
     this.vel = new Float32Array(2 * count);
     let k = 0;
-    const bottom = (this.ny - 1) * h - r;
-    const left = h + r + 0.5 * (interiorW - 2 * r - (cols - 0.5) * dx);
     for (let row = 0; row < rows; row++) {
       for (let c = 0; c < cols; c++) {
-        this.pos[2 * k] = left + dx * c + (row % 2 === 0 ? 0 : r);
-        this.pos[2 * k + 1] = bottom - dy * row;
+        const x = left + dx * c + (row % 2 === 0 ? 0 : r), y = bottom - dy * row;
+        if (!keep(x, y)) continue;
+        this.pos[2 * k] = x;
+        this.pos[2 * k + 1] = y;
         k++;
       }
     }
@@ -141,8 +168,11 @@ export class FlipSim {
     if (opts.pour) {
       this.pourRemaining = count;
       this.numParticles = 0;
+    }
+    if (opts.pour || water) {
       // Hex-packing rest density (what a settled fresh pool measures), since
-      // the first steps won't have a settled pool to measure it from.
+      // the first steps won't have a settled pool (or one without walls
+      // and obstacles cutting into it) to measure it from.
       this.restDensity = (h * h) / (2 * r * Math.sqrt(3) * r);
     }
 
@@ -360,7 +390,24 @@ export class FlipSim {
 
   _advect(dt) {
     const pos = this.pos, vel = this.vel;
-    for (let i = 0, n = 2 * this.numParticles; i < n; i++) pos[i] += vel[i] * dt;
+    if (!this.hasSolids) {
+      for (let i = 0, n = 2 * this.numParticles; i < n; i++) pos[i] += vel[i] * dt;
+      return;
+    }
+    // With level obstacles, a move that would end inside a solid cell slides
+    // along it instead (keep the x or the y part of the move), or stays put:
+    // particles never enter obstacles, so they can't tunnel or get stuck deep
+    // inside one where no free face is in reach.
+    const { s, ny, invH } = this;
+    const solidAt = (x, y) => s[Math.floor(x * invH) * ny + Math.floor(y * invH)] === 0;
+    for (let i = 0, n = this.numParticles; i < n; i++) {
+      const x0 = pos[2 * i], y0 = pos[2 * i + 1];
+      const x1 = x0 + vel[2 * i] * dt, y1 = y0 + vel[2 * i + 1] * dt;
+      if (!solidAt(x1, y1)) { pos[2 * i] = x1; pos[2 * i + 1] = y1; continue; }
+      if (!solidAt(x1, y0)) { pos[2 * i] = x1; vel[2 * i + 1] = 0; continue; }
+      if (!solidAt(x0, y1)) { pos[2 * i + 1] = y1; vel[2 * i] = 0; continue; }
+      vel[2 * i] = 0; vel[2 * i + 1] = 0;
+    }
   }
 
   // Counting-sorts particles by separation-hash cell (pos/vel are permuted in
@@ -452,6 +499,40 @@ export class FlipSim {
       if (x > maxX) { x = maxX; if (vel[2 * i] > 0) vel[2 * i] = 0; }
       if (!(y >= minY)) { y = minY; if (vel[2 * i + 1] < 0 || vel[2 * i + 1] !== vel[2 * i + 1]) vel[2 * i + 1] = 0; }
       if (y > maxY) { y = maxY; if (vel[2 * i + 1] > 0) vel[2 * i + 1] = 0; }
+      pos[2 * i] = x; pos[2 * i + 1] = y;
+    }
+    if (this.hasSolids) this._collideSolids();
+  }
+
+  // Level obstacles: a particle inside a solid cell leaves by the nearest face
+  // that opens onto a free cell; one near a solid neighbour is kept a radius
+  // away from it. Obstacles are several cells thick, more than a particle can
+  // travel in one substep, so the nearest exit is the side it came from.
+  _collideSolids() {
+    const { pos, vel, h, r, s, ny, invH } = this;
+    for (let i = 0, n = this.numParticles; i < n; i++) {
+      let x = pos[2 * i], y = pos[2 * i + 1];
+      let ci = Math.floor(x * invH), cj = Math.floor(y * invH);
+      if (s[ci * ny + cj] === 0) {
+        // Distances to leave through each face, only toward free neighbours.
+        let best = 1e9, bx = x, by = y, axis = 0, dir = 0;
+        const dl = x - ci * h + r, dr = (ci + 1) * h - x + r, du = y - cj * h + r, dd = (cj + 1) * h - y + r;
+        if (s[(ci - 1) * ny + cj] !== 0 && dl < best) { best = dl; bx = ci * h - r; by = y; axis = 0; dir = -1; }
+        if (s[(ci + 1) * ny + cj] !== 0 && dr < best) { best = dr; bx = (ci + 1) * h + r; by = y; axis = 0; dir = 1; }
+        if (s[ci * ny + cj - 1] !== 0 && du < best) { best = du; bx = x; by = cj * h - r; axis = 1; dir = -1; }
+        if (s[ci * ny + cj + 1] !== 0 && dd < best) { best = dd; bx = x; by = (cj + 1) * h + r; axis = 1; dir = 1; }
+        if (best < 1e9) {
+          x = bx; y = by;
+          const vi = 2 * i + axis;
+          if (vel[vi] * dir < 0) vel[vi] = 0;
+          ci = Math.floor(x * invH); cj = Math.floor(y * invH);
+        }
+      }
+      // Keep a radius from solid neighbours (faces only).
+      if (s[(ci - 1) * ny + cj] === 0 && x < ci * h + r) { x = ci * h + r; if (vel[2 * i] < 0) vel[2 * i] = 0; }
+      if (s[(ci + 1) * ny + cj] === 0 && x > (ci + 1) * h - r) { x = (ci + 1) * h - r; if (vel[2 * i] > 0) vel[2 * i] = 0; }
+      if (s[ci * ny + cj - 1] === 0 && y < cj * h + r) { y = cj * h + r; if (vel[2 * i + 1] < 0) vel[2 * i + 1] = 0; }
+      if (s[ci * ny + cj + 1] === 0 && y > (cj + 1) * h - r) { y = (cj + 1) * h - r; if (vel[2 * i + 1] > 0) vel[2 * i + 1] = 0; }
       pos[2 * i] = x; pos[2 * i + 1] = y;
     }
   }
